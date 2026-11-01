@@ -1,7 +1,15 @@
 const { initializeApp, cert } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const axios = require("axios");
-const serviceAccount = require("./service-account.json");
+
+let serviceAccount;
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  // GitHub Actions (Environment Variable ကနေ ဖတ်မည် - JSON string အနေနဲ့ လာတာကို parse လုပ်သည်)
+  serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+} else {
+  // Local (service-account.json ဖိုင်ကနေ ဖတ်မည်)
+  serviceAccount = require("./service-account.json");
+}
 
 initializeApp({
   credential: cert(serviceAccount)
