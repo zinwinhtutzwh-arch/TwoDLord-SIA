@@ -1,17 +1,14 @@
 {
-  "name": "lenovo-gaming",
+  "name": "twodlord-sia",
   "version": "1.0.0",
-  "description": "",
+  "description": "2D Data Sync Pipeline",
   "main": "script.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node script.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
-    "axios": "^1.21.0",
-    "firebase-admin": "^14.5.0"
+    "@google-cloud/firestore": "^7.0.0",
+    "axios": "^1.7.0",
+    "firebase-admin": "^12.0.0"
   }
 }
