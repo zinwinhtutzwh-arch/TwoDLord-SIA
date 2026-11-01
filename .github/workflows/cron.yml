@@ -1,0 +1,41 @@
+name: 2D Lottery Daily Automation
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+    - cron: '31 5 * * *'
+    - cron: '0 10 * * *'
+  workflow_dispatch:
+
+jobs:
+  run-automation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Run Archive Task (9:30 AM MMT)
+        if: github.event.schedule == '0 3 * * *' || github.event_name == 'workflow_dispatch'
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node script.js archive
+
+      - name: Run Noon Fetch Task (12:01 PM MMT)
+        if: github.event.schedule == '31 5 * * *' || github.event_name == 'workflow_dispatch'
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node script.js noon
+
+      - name: Run Evening Fetch Task (4:30 PM MMT)
+        if: github.event.schedule == '0 10 * * *' || github.event_name == 'workflow_dispatch'
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node script.js evening
