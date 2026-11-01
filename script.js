@@ -24,7 +24,7 @@ async function isHolidayOrWeekend() {
   }
 
   try {
-    const response = await axios.get("https://api.lucky2d.com/api/holiday/GetHolidayList");
+    const response = await axios.get("https://api.lucky2d.com/api/holiday/GetHolidayList", { timeout: 5000 });
     const holidays = response.data;
     const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Yangon' });
     if (Array.isArray(holidays) && holidays.includes(todayStr)) {
@@ -95,7 +95,7 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
   return new Promise((resolve) => {
     const timer = setInterval(async () => {
       try {
-        const response = await axios.get(apiUrl);
+        const response = await axios.get(apiUrl, { timeout: 5000 });
         finalData = response.data;
         console.log(`Fetched live data chunk for ${sectionName}...`);
       } catch (err) {
@@ -109,13 +109,16 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
             if (finalData) {
               const latestRef = db.collection("latest").doc("current");
               
-              // 🖼️ ပုံထဲကအတိုင်း 12:01 PM နဲ့ 04:30 PM ကို သီးသန့် Field လေးတွေနဲ့ ပုံစံကျကျ သိမ်းဆည်းခြင်း (merge: true သုံး၍ နှစ်ခုစလုံး တည်ရှိစေရန်)
+              // 🛡️ 2D String Format ('0x') မပျောက်စေရန် String casting သေချာလုပ်ပေးခြင်း
+              const rawTwod = finalData.twod ?? finalData.number ?? "";
+              const formattedTwod = rawTwod !== "" ? String(rawTwod).padStart(2, "0") : "";
+
               await latestRef.set({
                 [sectionKey]: {
                   section: sectionName,
-                  set: finalData.set || "",       // ဥပမာ - "1,524.29"
-                  val: finalData.val || finalData.value || "",   // ဥပမာ - "40,440.35"
-                  twod: finalData.twod || finalData.number || "" // ဥပမာ - "90"[cite: 4]
+                  set: String(finalData.set || ""),       // ဥပမာ - "1,524.29"
+                  val: String(finalData.val || finalData.value || ""),   // ဥပမာ - "40,440.35"
+                  twod: formattedTwod // ဥပမာ - "07" သို့မဟုတ် "90" (ရှေ့က 0 လွတ်မသွားစေရန်)
                 },
                 updatedAt: FieldValue.serverTimestamp()
               }, { merge: true });
@@ -143,11 +146,9 @@ async function main() {
     await morningArchiveTask();
   } else if (task === "noon") {
     console.log("Running Noon Fetch Task (12:01 PM)...");
-    // "noon_data" ဆိုတဲ့ Key နဲ့ 12:01 PM ကို သိမ်းမည်
     await fetchAndSaveLive("https://signalr.crazybossy.com/api/info/Get2dlog_Bysection?section=12:01%20PM", "noon_data", "12:01 PM");
   } else if (task === "evening") {
     console.log("Running Evening Fetch Task (4:30 PM)...");
-    // "evening_data" ဆိုတဲ့ Key နဲ့ 04:30 PM ကို သိမ်းမည်
     await fetchAndSaveLive("https://signalr.crazybossy.com/api/info/Get2dlog_Bysection?section=4:30%20PM", "evening_data", "04:30 PM");
   } else {
     console.log("Please specify a valid task: archive, noon, or evening");
