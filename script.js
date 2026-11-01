@@ -4,7 +4,7 @@ const axios = require("axios");
 
 let serviceAccount;
 if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-  // GitHub Actions (Environment Variable ကနေ ဖတ်မည် - JSON string အနေနဲ့ လာတာကို parse လုပ်သည်)
+  // GitHub Actions (Environment Variable ကနေ ဖတ်မည်)
   serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 } else {
   // Local (service-account.json ဖိုင်ကနေ ဖတ်မည်)
@@ -80,8 +80,8 @@ async function morningArchiveTask() {
   }
 }
 
-async function fetchAndSaveLive(apiUrl) {
-  console.log("Checking holiday/weekend status for live fetch task...");
+async function fetchAndSaveLive(apiUrl, sectionName) {
+  console.log(`Checking holiday/weekend status for live fetch task (${sectionName})...`);
   if (await isHolidayOrWeekend()) {
     console.log("Today is a weekend or holiday. Skipping live fetch task.");
     return;
@@ -98,6 +98,7 @@ async function fetchAndSaveLive(apiUrl) {
     const timer = setInterval(async () => {
       try {
         const response = await axios.get(apiUrl);
+        // API မှ ရလာသော data များကို ဖမ်းယူခြင်း (API ပုံစံအပေါ်မူတည်၍ response.data သို့မဟုတ် response.data.result ဖြစ်နိုင်သည်)
         finalData = response.data;
         console.log("Fetched live data chunk successfully...");
       } catch (err) {
@@ -109,11 +110,16 @@ async function fetchAndSaveLive(apiUrl) {
         (async () => {
           try {
             if (finalData) {
+              // 🖼️ သားကြီးလိုချင်သော Set, Value, 2D နှင့် Section အချက်အလက်များ အပြည့်အစုံ သိမ်းဆည်းခြင်း
               await db.collection("latest").doc("current").set({
-                data: finalData,
+                section: sectionName, // ဥပမာ - "12:01 PM" သို့မဟုတ် "04:30 PM"
+                set: finalData.set || "",       // Set တန်ဖိုး
+                value: finalData.value || "",   // Value တန်ဖိုး[cite: 3]
+                twod: finalData.twod || finalData.number || "",     // ထွက်ပေါ်လာသော 2D ဂဏန်း[cite: 3]
+                raw_data: finalData,            // အရန်အနေဖြင့် API ရလာဒ် အစစ်အမှန်ကိုပါ ထည့်သိမ်းထားသည်
                 updatedAt: FieldValue.serverTimestamp()
               });
-              console.log("Live session completed. Saved final data to latest/current.");
+              console.log(`Live session completed for ${sectionName}. Saved to latest/current.`);
             } else {
               console.log("No data received from API during the live session.");
             }
@@ -136,10 +142,10 @@ async function main() {
     await morningArchiveTask();
   } else if (task === "noon") {
     console.log("Running Noon Fetch Task (12:01 PM)...");
-    await fetchAndSaveLive("https://signalr.crazybossy.com/api/info/Get2dlog_Bysection?section=12:01%20PM");
+    await fetchAndSaveLive("https://signalr.crazybossy.com/api/info/Get2dlog_Bysection?section=12:01%20PM", "12:01 PM");
   } else if (task === "evening") {
     console.log("Running Evening Fetch Task (4:30 PM)...");
-    await fetchAndSaveLive("https://signalr.crazybossy.com/api/info/Get2dlog_Bysection?section=4:30%20PM");
+    await fetchAndSaveLive("https://signalr.crazybossy.com/api/info/Get2dlog_Bysection?section=4:30%20PM", "04:30 PM");
   } else {
     console.log("Please specify a valid task: archive, noon, or evening");
   }
