@@ -56,7 +56,6 @@ async function morningArchiveTask() {
       await db.collection("history").doc(todayStr).set(data);
       console.log(`Archived latest data to history/${todayStr}`);
 
-      // Archive ပြီးပါက latest ကို ရှင်းလင်းထားမည်
       await latestRef.set({
         updatedAt: FieldValue.serverTimestamp()
       });
@@ -87,51 +86,58 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
 
   const durationMs = 90 * 1000; // 90 seconds
   const intervalMs = 10 * 1000; // 10 seconds
-  let finalData = null;
   const startTime = Date.now();
+  let lastSavedDataString = ""; // ယခင်သိမ်းထားသော ဒေတာနှင့် နှိုင်းယှဉ်ရန်
 
-  console.log(`Starting live fetch loop from API for ${sectionName}: ${apiUrl}`);
+  console.log(`Starting live fetch loop with change detection for ${sectionName}: ${apiUrl}`);
 
   return new Promise((resolve) => {
     const timer = setInterval(async () => {
+      const elapsed = Date.now() - startTime;
+      const isTimeUp = elapsed >= durationMs;
+
       try {
         const response = await axios.get(apiUrl, { timeout: 5000 });
-        finalData = response.data;
-        console.log(`Fetched live data chunk for ${sectionName}...`);
+        const finalData = response.data;
+
+        if (finalData) {
+          // 🛡️ 2D String Format ('0x') လုံခြုံရေးအတွက် Padding လုပ်ခြင်း
+          const rawTwod = finalData.twod ?? finalData.number ?? "";
+          const formattedTwod = rawTwod !== "" ? String(rawTwod).padStart(2, "0") : "";
+
+          const formattedData = {
+            section: sectionName,
+            set: String(finalData.set || ""),
+            val: String(finalData.val || finalData.value || ""),
+            twod: formattedTwod
+          };
+
+          const currentDataString = JSON.stringify(formattedData);
+
+          // 💡 Data ပြောင်းလဲမှု (Change) ရှိမရှိ (သို့) ၉၀ စက္ကန့်ပြည့်သွားခြင်း ဟုတ်မဟုတ် စစ်ဆေးခြင်း
+          if (currentDataString !== lastSavedDataString || isTimeUp) {
+            const latestRef = db.collection("latest").doc("current");
+
+            await latestRef.set({
+              [sectionKey]: formattedData,
+              updatedAt: FieldValue.serverTimestamp()
+            }, { merge: true });
+
+            lastSavedDataString = currentDataString;
+            console.log(`[Update] Data changed or final save for ${sectionName}. Pushed to Firestore.`);
+          } else {
+            console.log(`[Skip] No data changes detected for ${sectionName}.`);
+          }
+        }
       } catch (err) {
         console.error("Error fetching section API:", err.message);
       }
 
-      if (Date.now() - startTime >= durationMs) {
+      // ၉၀ စက္ကန့်ပြည့်ပါက Timer ကို ရပ်ပြီး ပြီးဆုံးကြောင်း အကြောင်းကြားမည်
+      if (isTimeUp) {
         clearInterval(timer);
-        (async () => {
-          try {
-            if (finalData) {
-              const latestRef = db.collection("latest").doc("current");
-              
-              // 🛡️ 2D String Format ('0x') မပျောက်စေရန် String casting သေချာလုပ်ပေးခြင်း
-              const rawTwod = finalData.twod ?? finalData.number ?? "";
-              const formattedTwod = rawTwod !== "" ? String(rawTwod).padStart(2, "0") : "";
-
-              await latestRef.set({
-                [sectionKey]: {
-                  section: sectionName,
-                  set: String(finalData.set || ""),       // ဥပမာ - "1,524.29"
-                  val: String(finalData.val || finalData.value || ""),   // ဥပမာ - "40,440.35"
-                  twod: formattedTwod // ဥပမာ - "07" သို့မဟုတ် "90" (ရှေ့က 0 လွတ်မသွားစေရန်)
-                },
-                updatedAt: FieldValue.serverTimestamp()
-              }, { merge: true });
-
-              console.log(`Live session completed for ${sectionName}. Saved to latest/current.`);
-            } else {
-              console.log("No data received from API during the live session.");
-            }
-          } catch (dbErr) {
-            console.error("Error saving final live data to Firestore:", dbErr);
-          }
-          resolve();
-        })();
+        console.log(`Live session completed for ${sectionName}.`);
+        resolve();
       }
     }, intervalMs);
   });
