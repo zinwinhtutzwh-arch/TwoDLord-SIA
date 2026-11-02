@@ -78,9 +78,32 @@ async function morningArchiveTask() {
       const data = latestDoc.data();
       const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Yangon' });
 
+      // 1. Firebase Firestore ရဲ့ history ထဲ သိမ်းမည်
       await db.collection("history").doc(todayStr).set(data);
       console.log(`Archived latest data to history/${todayStr}`);
 
+      // 2. 💡 Cloudflare Worker သို့ history ဒေတာ လှမ်းပို့မည် (KV history အတွက်)
+      const cfWorkerUrl = process.env.CF_WORKER_URL;
+      if (cfWorkerUrl) {
+        try {
+          // Cloudflare Worker ရဲ့ /history သို့ Post လုပ်မည်
+          const workerHistoryUrl = cfWorkerUrl.endsWith('/') 
+            ? `${cfWorkerUrl}history` 
+            : `${cfWorkerUrl}/history`;
+
+          await axios.post(workerHistoryUrl, {
+            action: "archive",
+            date: todayStr,
+            data: data
+          }, { timeout: 5000 });
+          
+          console.log("[Success] History data archived to Cloudflare Worker/KV.");
+        } catch (err) {
+          console.error("Error sending history to Cloudflare Worker:", err.message);
+        }
+      }
+
+      // 3. Latest data ကို reset လုပ်မည်
       await latestRef.set({
         updatedAt: FieldValue.serverTimestamp()
       });
@@ -89,6 +112,7 @@ async function morningArchiveTask() {
       console.log("No 'latest/current' document found to archive.");
     }
 
+    // 4. Firestore History Cleanup (၁၀ ခုထက် ကျော်ရင် ဖျက်မည်)
     const historySnapshot = await db.collection("history").orderBy('__name__', 'desc').get();
     if (historySnapshot.size > 10) {
       const docsToDelete = historySnapshot.docs.slice(10);
