@@ -34,16 +34,22 @@ jobs:
         if: github.event.client_payload.task == 'noon' || (github.event_name == 'workflow_dispatch' && inputs.task == 'noon')
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          CF_WORKER_URL: ${{ secrets.CF_WORKER_URL }}
+          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
         run: node script.js noon
 
       - name: Run Evening Fetch Task
         if: github.event.client_payload.task == 'evening' || (github.event_name == 'workflow_dispatch' && inputs.task == 'evening')
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          CF_WORKER_URL: ${{ secrets.CF_WORKER_URL }}
+          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
         run: node script.js evening
 
       - name: Run Archive Task
         if: github.event.client_payload.task == 'archive' || (github.event_name == 'workflow_dispatch' && inputs.task == 'archive')
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          CF_WORKER_URL: ${{ secrets.CF_WORKER_URL }}
+          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
         run: node script.js archive
