@@ -15,6 +15,31 @@ initializeApp({
 
 const db = getFirestore();
 
+// 🌐 Cloudflare Worker နဲ့ Google Sheets ကို ဒေတာ လှမ်းပို့ရန် Function
+async function sendToExternalEndpoints(formattedData) {
+  // 1. Cloudflare Worker သို့ ပို့ခြင်း (KV အတွက်)
+  const cfWorkerUrl = process.env.CF_WORKER_URL;
+  if (cfWorkerUrl) {
+    try {
+      await axios.post(cfWorkerUrl, formattedData, { timeout: 5000 });
+      console.log("[Success] Data sent to Cloudflare Worker/KV.");
+    } catch (err) {
+      console.error("Error sending to Cloudflare Worker:", err.message);
+    }
+  }
+
+  // 2. Google Sheets (Web App URL) သို့ ပို့ခြင်း
+  const googleSheetUrl = process.env.GOOGLE_SHEET_URL;
+  if (googleSheetUrl) {
+    try {
+      await axios.post(googleSheetUrl, formattedData, { timeout: 5000 });
+      console.log("[Success] Data sent to Google Sheet.");
+    } catch (err) {
+      console.error("Error sending to Google Sheet:", err.message);
+    }
+  }
+}
+
 async function isHolidayOrWeekend() {
   const now = new Date();
   const dayOfWeek = now.getDay();
@@ -87,7 +112,7 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
   const durationMs = 90 * 1000; // 90 seconds
   const intervalMs = 10 * 1000; // 10 seconds
   const startTime = Date.now();
-  let lastSavedDataString = ""; // ယခင်သိမ်းထားသော ဒေတာနှင့် နှိုင်းယှဉ်ရန်
+  let lastSavedDataString = "";
 
   console.log(`Starting live fetch loop with change detection for ${sectionName}: ${apiUrl}`);
 
@@ -102,7 +127,6 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
 
         let finalData = null;
         if (Array.isArray(resData) && resData.length > 0) {
-          // 💡 createdAt (သို့မဟုတ် date) အချိန်ကို တိုက်စစ်ပြီး အသစ်ဆုံး (Most recent) Item ကို ရှာယူခြင်း
           finalData = resData.reduce((latest, current) => {
             const latestTime = new Date(latest.createdAt || latest.date || 0).getTime();
             const currentTime = new Date(current.createdAt || current.date || 0).getTime();
@@ -113,7 +137,6 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
         }
 
         if (finalData) {
-          // 🛡️ 2D String Format ('0x') လုံခြုံရေးအတွက် Padding လုပ်ခြင်း
           const rawTwod = finalData.result ?? finalData.twod ?? finalData.number ?? "";
           const formattedTwod = rawTwod !== "" ? String(rawTwod).padStart(2, "0") : "";
 
@@ -126,17 +149,21 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
 
           const currentDataString = JSON.stringify(formattedData);
 
-          // 💡 Data ပြောင်းလဲမှု (Change) ရှိမရှိ (သို့) ၉၀ စက္ကန့်ပြည့်သွားခြင်း ဟုတ်မဟုတ် စစ်ဆေးခြင်း
           if (currentDataString !== lastSavedDataString || isTimeUp) {
             const latestRef = db.collection("latest").doc("current");
 
+            // 1. Firebase Firestore သို့ သိမ်းမည်
             await latestRef.set({
               [sectionKey]: formattedData,
               updatedAt: FieldValue.serverTimestamp()
             }, { merge: true });
 
+            console.log(`[Update] Pushed to Firestore for ${sectionName}.`);
+
+            // 2. Cloudflare KV နှင့် Google Sheets သို့ တစ်ပြိုင်နက်တည်း လှမ်းပို့မည်
+            await sendToExternalEndpoints(formattedData);
+
             lastSavedDataString = currentDataString;
-            console.log(`[Update] Data changed or final save for ${sectionName}. Pushed to Firestore.`);
           } else {
             console.log(`[Skip] No data changes detected for ${sectionName}.`);
           }
@@ -145,7 +172,6 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
         console.error("Error fetching section API:", err.message);
       }
 
-      // ၉၀ စက္ကန့်ပြည့်ပါက Timer ကို ရပ်ပြီး ပြီးဆုံးကြောင်း အကြောင်းကြားမည်
       if (isTimeUp) {
         clearInterval(timer);
         console.log(`Live session completed for ${sectionName}.`);
