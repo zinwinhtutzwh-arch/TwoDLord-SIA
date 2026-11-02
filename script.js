@@ -98,17 +98,29 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
 
       try {
         const response = await axios.get(apiUrl, { timeout: 5000 });
-        const finalData = response.data;
+        const resData = response.data;
+
+        let finalData = null;
+        if (Array.isArray(resData) && resData.length > 0) {
+          // 💡 createdAt (သို့မဟုတ် date) အချိန်ကို တိုက်စစ်ပြီး အသစ်ဆုံး (Most recent) Item ကို ရှာယူခြင်း
+          finalData = resData.reduce((latest, current) => {
+            const latestTime = new Date(latest.createdAt || latest.date || 0).getTime();
+            const currentTime = new Date(current.createdAt || current.date || 0).getTime();
+            return currentTime > latestTime ? current : latest;
+          }, resData[0]);
+        } else {
+          finalData = resData;
+        }
 
         if (finalData) {
           // 🛡️ 2D String Format ('0x') လုံခြုံရေးအတွက် Padding လုပ်ခြင်း
-          const rawTwod = finalData.twod ?? finalData.number ?? "";
+          const rawTwod = finalData.result ?? finalData.twod ?? finalData.number ?? "";
           const formattedTwod = rawTwod !== "" ? String(rawTwod).padStart(2, "0") : "";
 
           const formattedData = {
             section: sectionName,
             set: String(finalData.set || ""),
-            val: String(finalData.val || finalData.value || ""),
+            val: String(finalData.value || finalData.val || ""),
             twod: formattedTwod
           };
 
