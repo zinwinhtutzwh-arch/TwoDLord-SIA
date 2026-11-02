@@ -2,13 +2,24 @@ name: 2D Lottery Daily Automation
 
 on:
   schedule:
-    - cron: '0 3 * * *'
-    - cron: '31 5 * * *'
-    - cron: '0 10 * * *'
+    - cron: '0 3 * * *'    # 9:30 AM MMT (Archive Task)
+    - cron: '31 5 * * *'   # 12:01 PM MMT (Noon Fetch Task)
+    - cron: '0 10 * * *'   # 4:30 PM MMT (Evening Fetch Task)
   workflow_dispatch:
+    inputs:
+      task:
+        description: 'Select task to run'
+        required: true
+        default: 'noon'
+        type: choice
+        options:
+          - archive
+          - noon
+          - evening
 
 jobs:
-  run-automation:
+  run-archive:
+    if: github.event.schedule == '0 3 * * *' || (github.event_name == 'workflow_dispatch' && inputs.task == 'archive')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -23,19 +34,46 @@ jobs:
         run: npm install
 
       - name: Run Archive Task (9:30 AM MMT)
-        if: github.event.schedule == '0 3 * * *' || github.event_name == 'workflow_dispatch'
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: node script.js archive
 
+  run-noon:
+    if: github.event.schedule == '31 5 * * *' || (github.event_name == 'workflow_dispatch' && inputs.task == 'noon')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: npm install
+
       - name: Run Noon Fetch Task (12:01 PM MMT)
-        if: github.event.schedule == '31 5 * * *' || github.event_name == 'workflow_dispatch'
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: node script.js noon
 
+  run-evening:
+    if: github.event.schedule == '0 10 * * *' || (github.event_name == 'workflow_dispatch' && inputs.task == 'evening')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: npm install
+
       - name: Run Evening Fetch Task (4:30 PM MMT)
-        if: github.event.schedule == '0 10 * * *' || github.event_name == 'workflow_dispatch'
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         run: node script.js evening
