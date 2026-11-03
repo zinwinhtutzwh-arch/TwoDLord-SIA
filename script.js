@@ -183,13 +183,32 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
           if (currentDataString !== lastSavedDataString || isTimeUp) {
             const latestRef = db.collection("latest").doc("current");
 
-            // Firebase Firestore သို့ သီးသန့် သိမ်းမည်
+            // 1. Firebase Firestore သို့ Data တင်မည်
             await latestRef.set({
               [sectionKey]: formattedData,
               updatedAt: FieldValue.serverTimestamp()
             }, { merge: true });
 
             console.log(`[Update] Pushed to Firestore for ${sectionName}.`);
+
+            // 2. 🚀 Worker ကို လှမ်းနိုးရန် (Wake-up Ping သာ ပို့မည် - Worker က Firebase ထဲကနေ သူ့ဘာသာ ဆွဲယူလိမ့်မည်)
+            const cfWorkerUrl = process.env.CF_WORKER_URL;
+            if (cfWorkerUrl) {
+              try {
+                const workerTriggerUrl = cfWorkerUrl.endsWith('/') 
+                  ? `${cfWorkerUrl}trigger` 
+                  : `${cfWorkerUrl}/trigger`;
+
+                await axios.post(workerTriggerUrl, {
+                  section: sectionKey,
+                  action: "fetch_and_sync"
+                }, { timeout: 3000 });
+
+                console.log(`[Triggered] Successfully woke up Cloudflare Worker for ${sectionName}.`);
+              } catch (workerErr) {
+                console.error("Error triggering Cloudflare Worker:", workerErr.message);
+              }
+            }
 
             lastSavedDataString = currentDataString;
           } else {
@@ -221,7 +240,7 @@ async function main() {
     await fetchAndSaveLive("https://signalr.crazybossy.com/api/info/Get2dlog_Bysection?section=12:01%20PM", "noon_data", "12:01 PM");
   } else if (task === "evening") {
     console.log("Running Evening Fetch Task (4:30 PM)...");
-    await fetchAndSaveLive("https://signalr.crazybossy.com/api/info/Get2dlog_Bysection?section=04:30%20PM", "evening_data", "04:30 PM");
+    await fetchAndSaveLive("https://signalr.crazybossy.com/api/info/Get2dlog_Bysection?section=04:30%20PM", "evening_data", "4:30 PM");
   } else {
     console.log("Please specify a valid task: archive, noon, or evening");
   }
