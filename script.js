@@ -140,8 +140,8 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
     return;
   }
 
-  const durationMs = 90 * 1000; // 90 seconds
-  const intervalMs = 10 * 1000; // 10 seconds
+  const durationMs = 120 * 1000; // 120 seconds (၁၂၀ စက္ကန့် / ၁၂ ခါ)
+  const intervalMs = 10 * 1000;  // 10 seconds တစ်ကြိမ်
   const startTime = Date.now();
   let lastSavedDataString = "";
 
