@@ -15,31 +15,6 @@ initializeApp({
 
 const db = getFirestore();
 
-// 🌐 Cloudflare Worker နဲ့ Google Sheets ကို ဒေတာ လှမ်းပို့ရန် Function
-async function sendToExternalEndpoints(formattedData) {
-  // 1. Cloudflare Worker သို့ ပို့ခြင်း (KV အတွက်)
-  const cfWorkerUrl = process.env.CF_WORKER_URL;
-  if (cfWorkerUrl) {
-    try {
-      await axios.post(cfWorkerUrl, formattedData, { timeout: 5000 });
-      console.log("[Success] Data sent to Cloudflare Worker/KV.");
-    } catch (err) {
-      console.error("Error sending to Cloudflare Worker:", err.message);
-    }
-  }
-
-  // 2. Google Sheets (Web App URL) သို့ ပို့ခြင်း
-  const googleSheetUrl = process.env.GOOGLE_SHEET_URL;
-  if (googleSheetUrl) {
-    try {
-      await axios.post(googleSheetUrl, formattedData, { timeout: 5000 });
-      console.log("[Success] Data sent to Google Sheet.");
-    } catch (err) {
-      console.error("Error sending to Google Sheet:", err.message);
-    }
-  }
-}
-
 async function isHolidayOrWeekend() {
   const now = new Date();
   const dayOfWeek = now.getDay();
@@ -63,6 +38,36 @@ async function isHolidayOrWeekend() {
   return false;
 }
 
+// 📅 အနီးဆုံး အတိတ်ဖွင့်ရက် (Last Business/Trading Day) ကို ရှာပေးမည့် Function
+async function getLastBusinessDay() {
+  let date = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Yangon" }));
+  date.setDate(date.getDate() - 1); // မနေ့က စတင်စစ်မည်
+
+  let holidays = [];
+  try {
+    const response = await axios.get("https://api.lucky2d.com/api/holiday/GetHolidayList", { timeout: 5000 });
+    if (Array.isArray(response.data)) {
+      holidays = response.data;
+    }
+  } catch (error) {
+    console.error("Error fetching holiday list for last business day:", error.message);
+  }
+
+  while (true) {
+    const dayOfWeek = date.getDay(); // 0 = Sun, 6 = Sat
+    const dateStr = date.toLocaleDateString('en-CA', { timeZone: 'Asia/Yangon' });
+
+    const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
+    const isHoliday = holidays.includes(dateStr);
+
+    if (!isWeekend && !isHoliday) {
+      return dateStr; // ဖွင့်ရက်စွဲ ရပြီဆိုပါက Return ပြန်မည်
+    }
+
+    date.setDate(date.getDate() - 1); // စနေ/တနင်္ဂနွေ သို့မဟုတ် ပိတ်ရက်ဖြစ်ပါက ၁ ရက် ထပ်ဆုတ်မည်
+  }
+}
+
 async function morningArchiveTask() {
   console.log("Checking holiday/weekend status for archive task...");
   if (await isHolidayOrWeekend()) {
@@ -76,24 +81,26 @@ async function morningArchiveTask() {
 
     if (latestDoc.exists) {
       const data = latestDoc.data();
-      const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Yangon' });
+      
+      // 💡 အနီးဆုံး အတိတ်ဖွင့်ရက် (Last Business Day) ရက်စွဲကို ရယူမည်
+      const archiveDateStr = await getLastBusinessDay();
+      console.log(`Calculated target archive date: ${archiveDateStr}`);
 
-      // 1. Firebase Firestore ရဲ့ history ထဲ သိမ်းမည်
-      await db.collection("history").doc(todayStr).set(data);
-      console.log(`Archived latest data to history/${todayStr}`);
+      // 1. Firebase Firestore ရဲ့ history ထဲ အတိတ်ဖွင့်ရက်စွဲဖြင့် သိမ်းမည်
+      await db.collection("history").doc(archiveDateStr).set(data);
+      console.log(`Archived latest data to history/${archiveDateStr}`);
 
-      // 2. 💡 Cloudflare Worker သို့ history ဒေတာ လှမ်းပို့မည် (KV history အတွက်)
+      // 2. Cloudflare Worker သို့ history ဒေတာ လှမ်းပို့မည် (KV history အတွက်)
       const cfWorkerUrl = process.env.CF_WORKER_URL;
       if (cfWorkerUrl) {
         try {
-          // Cloudflare Worker ရဲ့ /history သို့ Post လုပ်မည်
           const workerHistoryUrl = cfWorkerUrl.endsWith('/') 
             ? `${cfWorkerUrl}history` 
             : `${cfWorkerUrl}/history`;
 
           await axios.post(workerHistoryUrl, {
             action: "archive",
-            date: todayStr,
+            date: archiveDateStr,
             data: data
           }, { timeout: 5000 });
           
@@ -176,16 +183,13 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
           if (currentDataString !== lastSavedDataString || isTimeUp) {
             const latestRef = db.collection("latest").doc("current");
 
-            // 1. Firebase Firestore သို့ သိမ်းမည်
+            // Firebase Firestore သို့ သီးသန့် သိမ်းမည်
             await latestRef.set({
               [sectionKey]: formattedData,
               updatedAt: FieldValue.serverTimestamp()
             }, { merge: true });
 
             console.log(`[Update] Pushed to Firestore for ${sectionName}.`);
-
-            // 2. Cloudflare KV နှင့် Google Sheets သို့ တစ်ပြိုင်နက်တည်း လှမ်းပို့မည်
-            await sendToExternalEndpoints(formattedData);
 
             lastSavedDataString = currentDataString;
           } else {
