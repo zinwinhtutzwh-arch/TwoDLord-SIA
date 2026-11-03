@@ -82,15 +82,12 @@ async function morningArchiveTask() {
     if (latestDoc.exists) {
       const data = latestDoc.data();
       
-      // 💡 အနီးဆုံး အတိတ်ဖွင့်ရက် (Last Business Day) ရက်စွဲကို ရယူမည်
       const archiveDateStr = await getLastBusinessDay();
       console.log(`Calculated target archive date: ${archiveDateStr}`);
 
-      // 1. Firebase Firestore ရဲ့ history ထဲ အတိတ်ဖွင့်ရက်စွဲဖြင့် သိမ်းမည်
       await db.collection("history").doc(archiveDateStr).set(data);
       console.log(`Archived latest data to history/${archiveDateStr}`);
 
-      // 2. Cloudflare Worker သို့ history ဒေတာ လှမ်းပို့မည် (KV history အတွက်)
       const cfWorkerUrl = process.env.CF_WORKER_URL;
       if (cfWorkerUrl) {
         try {
@@ -110,7 +107,6 @@ async function morningArchiveTask() {
         }
       }
 
-      // 3. Latest data ကို reset လုပ်မည်
       await latestRef.set({
         updatedAt: FieldValue.serverTimestamp()
       });
@@ -119,7 +115,6 @@ async function morningArchiveTask() {
       console.log("No 'latest/current' document found to archive.");
     }
 
-    // 4. Firestore History Cleanup (၁၀ ခုထက် ကျော်ရင် ဖျက်မည်)
     const historySnapshot = await db.collection("history").orderBy('__name__', 'desc').get();
     if (historySnapshot.size > 10) {
       const docsToDelete = historySnapshot.docs.slice(10);
@@ -133,6 +128,27 @@ async function morningArchiveTask() {
   }
 }
 
+// 🎯 Target Time အတိအကျကို တွက်ထုတ်မည့် Helper Function (Asia/Yangon အချိန်အရ)
+function getTargetDateTime(sectionName) {
+  const now = new Date();
+  // Yangon အချိန်ကို ယူရန် string ဖြင့် ပြောင်းမည်
+  const yangonDateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Yangon' }); // YYYY-MM-DD
+  
+  let targetHour = 12;
+  let targetMinute = 1;
+
+  if (sectionName.toLowerCase().includes("4:30") || sectionName.toLowerCase().includes("evening")) {
+    targetHour = 16;
+    targetMinute = 30;
+  }
+
+  // Yangon အချိန်နဲ့ Target Time ကို UTC Timestamp သို့ ပြန်ပြောင်းတွက်မည်
+  // ဥပမာ - 12:01 PM Yangon time = 05:30 UTC
+  // အလွယ်ဆုံးနည်းကတော့ string ကနေ ISO datetime တည်ဆောက်ပြီး Date object တည်ဆောက်ခြင်း
+  const targetString = `${yangonDateStr}T${String(targetHour).padStart(2, '0')}:${String(targetMinute).padStart(2, '0')}:00+06:30`;
+  return new Date(targetString).getTime();
+}
+
 async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
   console.log(`Checking holiday/weekend status for live fetch task (${sectionName})...`);
   if (await isHolidayOrWeekend()) {
@@ -140,16 +156,22 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
     return;
   }
 
-  const durationMs = 150 * 1000; // 150 seconds (၁၅ ခါ)
+  const durationMs = 150 * 1000; // 150 seconds (၂ မိနစ်ခွဲ)
   const intervalMs = 10 * 1000;  // 10 seconds တစ်ကြိမ်
   const startTime = Date.now();
   let lastSavedDataString = "";
+  let hasTriggeredWorker = false; // Worker ကို တစ်ခါပဲ လှမ်းနိုးရန် Flag
 
-  console.log(`Starting live fetch loop with change detection for ${sectionName}: ${apiUrl}`);
+  // Target Time အတိအကျကို တွက်မည် (ဥပမာ: 12:01:00 or 16:30:00)
+  const targetTimeMs = getTargetDateTime(sectionName);
+  console.log(`Target Time for ${sectionName} is set to timestamp: ${targetTimeMs}`);
+
+  console.log(`Starting live fetch loop for ${sectionName}: ${apiUrl}`);
 
   return new Promise((resolve) => {
     const timer = setInterval(async () => {
-      const elapsed = Date.now() - startTime;
+      const nowMs = Date.now();
+      const elapsed = nowMs - startTime;
       const isTimeUp = elapsed >= durationMs;
 
       try {
@@ -180,45 +202,47 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
 
           const currentDataString = JSON.stringify(formattedData);
 
+          // 1. Data အပြောင်းအလဲ ရှိတိုင်း Firebase ထဲ အမြဲ ကြိုတင် သိမ်းထားမည် (Always up-to-date in Firebase)
           if (currentDataString !== lastSavedDataString || isTimeUp) {
             const latestRef = db.collection("latest").doc("current");
-
-            // 1. Firebase Firestore သို့ Data တင်မည်
             await latestRef.set({
               [sectionKey]: formattedData,
               updatedAt: FieldValue.serverTimestamp()
             }, { merge: true });
 
-            console.log(`[Update] Pushed to Firestore for ${sectionName}.`);
-
-            // 2. 🚀 Worker ကို လှမ်းနိုးရန် (Wake-up Ping သာ ပို့မည် - Worker က Firebase ထဲကနေ သူ့ဘာသာ ဆွဲယူလိမ့်မည်)
-            const cfWorkerUrl = process.env.CF_WORKER_URL;
-            if (cfWorkerUrl) {
-              try {
-                const workerTriggerUrl = cfWorkerUrl.endsWith('/') 
-                  ? `${cfWorkerUrl}trigger` 
-                  : `${cfWorkerUrl}/trigger`;
-
-                await axios.post(workerTriggerUrl, {
-                  section: sectionKey,
-                  action: "fetch_and_sync"
-                }, { timeout: 3000 });
-
-                console.log(`[Triggered] Successfully woke up Cloudflare Worker for ${sectionName}.`);
-              } catch (workerErr) {
-                console.error("Error triggering Cloudflare Worker:", workerErr.message);
-              }
-            }
-
+            console.log(`[Firebase Updated] Saved live data for ${sectionName}.`);
             lastSavedDataString = currentDataString;
-          } else {
-            console.log(`[Skip] No data changes detected for ${sectionName}.`);
           }
         }
       } catch (err) {
         console.error("Error fetching section API:", err.message);
       }
 
+      // 2. 🚀 Target Time အတိအကျ (သို့မဟုတ် ကျော်လွန်သွားချိန်) ရောက်ပြီဆိုမှ Worker ကို တစ်ကြိမ်တည်း လှမ်းနိုးမည်
+      if (!hasTriggeredWorker && (nowMs >= targetTimeMs || isTimeUp)) {
+        hasTriggeredWorker = true;
+        console.log(`[Target Time Reached] Triggering Cloudflare Worker for ${sectionName}...`);
+
+        const cfWorkerUrl = process.env.CF_WORKER_URL;
+        if (cfWorkerUrl) {
+          try {
+            const workerTriggerUrl = cfWorkerUrl.endsWith('/') 
+              ? `${cfWorkerUrl}trigger` 
+              : `${cfWorkerUrl}/trigger`;
+
+            await axios.post(workerTriggerUrl, {
+              section: sectionKey,
+              action: "fetch_and_sync"
+            }, { timeout: 3000 });
+
+            console.log(`[Success] Successfully woke up Cloudflare Worker at target time for ${sectionName}.`);
+          } catch (workerErr) {
+            console.error("Error triggering Cloudflare Worker:", workerErr.message);
+          }
+        }
+      }
+
+      // Loop ပြီးဆုံးချိန်
       if (isTimeUp) {
         clearInterval(timer);
         console.log(`Live session completed for ${sectionName}.`);
