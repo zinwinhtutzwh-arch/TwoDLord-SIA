@@ -143,12 +143,11 @@ function getTargetDateTime(sectionName) {
   }
 
   // Yangon အချိန်နဲ့ Target Time ကို UTC Timestamp သို့ ပြန်ပြောင်းတွက်မည်
-  // ဥပမာ - 12:01 PM Yangon time = 05:30 UTC
-  // အလွယ်ဆုံးနည်းကတော့ string ကနေ ISO datetime တည်ဆောက်ပြီး Date object တည်ဆောက်ခြင်း
   const targetString = `${yangonDateStr}T${String(targetHour).padStart(2, '0')}:${String(targetMinute).padStart(2, '0')}:00+06:30`;
   return new Date(targetString).getTime();
 }
 
+// 🚀 Target Time အတိအကျတွင် ယူ၍ Worker ကို ချက်ချင်းနိုးမည့် Function အသစ်
 async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
   console.log(`Checking holiday/weekend status for live fetch task (${sectionName})...`);
   if (await isHolidayOrWeekend()) {
@@ -156,100 +155,100 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
     return;
   }
 
-  const durationMs = 150 * 1000; // 150 seconds (၂ မိနစ်ခွဲ)
-  const intervalMs = 10 * 1000;  // 10 seconds တစ်ကြိမ်
-  const startTime = Date.now();
-  let lastSavedDataString = "";
-  let hasTriggeredWorker = false; // Worker ကို တစ်ခါပဲ လှမ်းနိုးရန် Flag
-
-  // Target Time အတိအကျကို တွက်မည် (ဥပမာ: 12:01:00 or 16:30:00)
   const targetTimeMs = getTargetDateTime(sectionName);
+  const nowMs = Date.now();
+  const delayMs = targetTimeMs - nowMs;
+
   console.log(`Target Time for ${sectionName} is set to timestamp: ${targetTimeMs}`);
 
-  console.log(`Starting live fetch loop for ${sectionName}: ${apiUrl}`);
+  if (delayMs > 0) {
+    console.log(`[Silent Wait] Script started early. Waiting for ${(delayMs / 1000).toFixed(1)} seconds until exact target time...`);
+    // Target Time အတိအကျ ရောက်သည်အထိ တိတ်တဆိတ် စောင့်ဆိုင်းမည်
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  } else {
+    console.log(`[Warning] Target time already passed or reached by ${(Math.abs(delayMs) / 1000).toFixed(1)}s. Executing immediately.`);
+  }
 
-  return new Promise((resolve) => {
-    const timer = setInterval(async () => {
-      const nowMs = Date.now();
-      const elapsed = nowMs - startTime;
-      const isTimeUp = elapsed >= durationMs;
+  console.log(`[Executing] Fetching exact live data for ${sectionName} from API: ${apiUrl}`);
 
-      try {
-        const response = await axios.get(apiUrl, { timeout: 5000 });
-        const resData = response.data;
-
-        let finalData = null;
-        if (Array.isArray(resData) && resData.length > 0) {
-          finalData = resData.reduce((latest, current) => {
-            const latestTime = new Date(latest.createdAt || latest.date || 0).getTime();
-            const currentTime = new Date(current.createdAt || current.date || 0).getTime();
-            return currentTime > latestTime ? current : latest;
-          }, resData[0]);
-        } else {
-          finalData = resData;
-        }
-
-        if (finalData) {
-          const rawTwod = finalData.result ?? finalData.twod ?? finalData.number ?? "";
-          const formattedTwod = rawTwod !== "" ? String(rawTwod).padStart(2, "0") : "";
-
-          const formattedData = {
-            section: sectionName,
-            set: String(finalData.set || ""),
-            val: String(finalData.value || finalData.val || ""),
-            twod: formattedTwod
-          };
-
-          const currentDataString = JSON.stringify(formattedData);
-
-          // 1. Data အပြောင်းအလဲ ရှိတိုင်း Firebase ထဲ အမြဲ ကြိုတင် သိမ်းထားမည် (Always up-to-date in Firebase)
-          if (currentDataString !== lastSavedDataString || isTimeUp) {
-            const latestRef = db.collection("latest").doc("current");
-            await latestRef.set({
-              [sectionKey]: formattedData,
-              updatedAt: FieldValue.serverTimestamp()
-            }, { merge: true });
-
-            console.log(`[Firebase Updated] Saved live data for ${sectionName}.`);
-            lastSavedDataString = currentDataString;
-          }
-        }
-      } catch (err) {
-        console.error("Error fetching section API:", err.message);
+  // Timeout ဖြစ်ခဲ့ပါက အမြန်ဆုံး ၃ ကြိမ်အထိ ထပ်မံကြိုးစားရန် (Retry Mechanism)
+  let response = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      response = await axios.get(apiUrl, { timeout: 5000 });
+      if (response && response.data) {
+        break; // အောင်မြင်ပါက loop မှ ထွက်မည်
       }
-
-      // 2. 🚀 Target Time အတိအကျ (သို့မဟုတ် ကျော်လွန်သွားချိန်) ရောက်ပြီဆိုမှ Worker ကို တစ်ကြိမ်တည်း လှမ်းနိုးမည်
-      if (!hasTriggeredWorker && (nowMs >= targetTimeMs || isTimeUp)) {
-        hasTriggeredWorker = true;
-        console.log(`[Target Time Reached] Triggering Cloudflare Worker for ${sectionName}...`);
-
-        const cfWorkerUrl = process.env.CF_WORKER_URL;
-        if (cfWorkerUrl) {
-          try {
-            const workerTriggerUrl = cfWorkerUrl.endsWith('/') 
-              ? `${cfWorkerUrl}trigger` 
-              : `${cfWorkerUrl}/trigger`;
-
-            await axios.post(workerTriggerUrl, {
-              section: sectionKey,
-              action: "fetch_and_sync"
-            }, { timeout: 3000 });
-
-            console.log(`[Success] Successfully woke up Cloudflare Worker at target time for ${sectionName}.`);
-          } catch (workerErr) {
-            console.error("Error triggering Cloudflare Worker:", workerErr.message);
-          }
-        }
+    } catch (err) {
+      console.error(`[Attempt ${attempt}/3] Error fetching section API:`, err.message);
+      if (attempt < 3) {
+        await new Promise((r) => setTimeout(r, 1000)); // ၁ စက္ကန့် စောင့်ပြီး ထပ်ကြိုးစားမည်
       }
+    }
+  }
 
-      // Loop ပြီးဆုံးချိန်
-      if (isTimeUp) {
-        clearInterval(timer);
-        console.log(`Live session completed for ${sectionName}.`);
-        resolve();
-      }
-    }, intervalMs);
-  });
+  if (!response || !response.data) {
+    console.error(`[Failed] Could not fetch data for ${sectionName} after multiple attempts.`);
+    return;
+  }
+
+  const resData = response.data;
+  let finalData = null;
+  if (Array.isArray(resData) && resData.length > 0) {
+    finalData = resData.reduce((latest, current) => {
+      const latestTime = new Date(latest.createdAt || latest.date || 0).getTime();
+      const currentTime = new Date(current.createdAt || current.date || 0).getTime();
+      return currentTime > latestTime ? current : latest;
+    }, resData[0]);
+  } else {
+    finalData = resData;
+  }
+
+  if (finalData) {
+    const rawTwod = finalData.result ?? finalData.twod ?? finalData.number ?? "";
+    const formattedTwod = rawTwod !== "" ? String(rawTwod).padStart(2, "0") : "";
+
+    const formattedData = {
+      section: sectionName,
+      set: String(finalData.set || ""),
+      val: String(finalData.value || finalData.val || ""),
+      twod: formattedTwod
+    };
+
+    try {
+      const latestRef = db.collection("latest").doc("current");
+      await latestRef.set({
+        [sectionKey]: formattedData,
+        updatedAt: FieldValue.serverTimestamp()
+      }, { merge: true });
+
+      console.log(`[Firebase Updated] Successfully saved exact live data for ${sectionName}.`);
+    } catch (dbErr) {
+      console.error("Error saving data to Firebase:", dbErr.message);
+    }
+  }
+
+  // 🚀 Cloudflare Worker ကို ချက်ချင်း လှမ်းနိုးမည် (Trigger)
+  console.log(`[Triggering Worker] Waking up Cloudflare Worker for ${sectionName}...`);
+  const cfWorkerUrl = process.env.CF_WORKER_URL;
+  if (cfWorkerUrl) {
+    try {
+      const workerTriggerUrl = cfWorkerUrl.endsWith('/') 
+        ? `${cfWorkerUrl}trigger` 
+        : `${cfWorkerUrl}/trigger`;
+
+      await axios.post(workerTriggerUrl, {
+        section: sectionKey,
+        action: "fetch_and_sync"
+      }, { timeout: 3000 });
+
+      console.log(`[Success] Successfully woke up Cloudflare Worker for ${sectionName}.`);
+    } catch (workerErr) {
+      console.error("Error triggering Cloudflare Worker:", workerErr.message);
+    }
+  }
+
+  console.log(`Live session completed for ${sectionName}.`);
 }
 
 async function main() {
