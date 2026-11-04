@@ -131,7 +131,6 @@ async function morningArchiveTask() {
 // 🎯 Target Time အတိအကျကို တွက်ထုတ်မည့် Helper Function (Asia/Yangon အချိန်အရ)
 function getTargetDateTime(sectionName) {
   const now = new Date();
-  // Yangon အချိန်ကို ယူရန် string ဖြင့် ပြောင်းမည်
   const yangonDateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Yangon' }); // YYYY-MM-DD
   
   let targetHour = 12;
@@ -142,7 +141,6 @@ function getTargetDateTime(sectionName) {
     targetMinute = 30;
   }
 
-  // Yangon အချိန်နဲ့ Target Time ကို UTC Timestamp သို့ ပြန်ပြောင်းတွက်မည်
   const targetString = `${yangonDateStr}T${String(targetHour).padStart(2, '0')}:${String(targetMinute).padStart(2, '0')}:00+06:30`;
   return new Date(targetString).getTime();
 }
@@ -163,7 +161,6 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
 
   if (delayMs > 0) {
     console.log(`[Silent Wait] Script started early. Waiting for ${(delayMs / 1000).toFixed(1)} seconds until exact target time...`);
-    // Target Time အတိအကျ ရောက်သည်အထိ တိတ်တဆိတ် စောင့်ဆိုင်းမည်
     await new Promise((resolve) => setTimeout(resolve, delayMs));
   } else {
     console.log(`[Warning] Target time already passed or reached by ${(Math.abs(delayMs) / 1000).toFixed(1)}s. Executing immediately.`);
@@ -171,18 +168,17 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
 
   console.log(`[Executing] Fetching exact live data for ${sectionName} from API: ${apiUrl}`);
 
-  // Timeout ဖြစ်ခဲ့ပါက အမြန်ဆုံး ၃ ကြိမ်အထိ ထပ်မံကြိုးစားရန် (Retry Mechanism)
   let response = null;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       response = await axios.get(apiUrl, { timeout: 5000 });
       if (response && response.data) {
-        break; // အောင်မြင်ပါက loop မှ ထွက်မည်
+        break;
       }
     } catch (err) {
       console.error(`[Attempt ${attempt}/3] Error fetching section API:`, err.message);
       if (attempt < 3) {
-        await new Promise((r) => setTimeout(r, 1000)); // ၁ စက္ကန့် စောင့်ပြီး ထပ်ကြိုးစားမည်
+        await new Promise((r) => setTimeout(r, 1000));
       }
     }
   }
@@ -194,11 +190,41 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
 
   const resData = response.data;
   let finalData = null;
+  
+  let targetHour = 12;
+  let targetMinute = 1;
+  if (sectionName.toLowerCase().includes("4:30") || sectionName.toLowerCase().includes("evening")) {
+    targetHour = 16;
+    targetMinute = 30;
+  }
+
   if (Array.isArray(resData) && resData.length > 0) {
-    finalData = resData.reduce((latest, current) => {
-      const latestTime = new Date(latest.createdAt || latest.date || 0).getTime();
-      const currentTime = new Date(current.createdAt || current.date || 0).getTime();
-      return currentTime > latestTime ? current : latest;
+    // 🎯 Target Time အတိအကျနှင့် အကိုက်ညီဆုံး ဒေတာကို ရွေးချယ်ခြင်း
+    finalData = resData.reduce((closest, current) => {
+      const currentDateStr = current.createdAt || current.date || "";
+      if (!currentDateStr) return closest;
+
+      const currDate = new Date(currentDateStr);
+      const currHour = currDate.getHours();
+      const currMinute = currDate.getMinutes();
+      const currSecond = currDate.getSeconds();
+
+      const targetTotalSec = targetHour * 3600 + targetMinute * 60;
+      const currTotalSec = currHour * 3600 + currMinute * 60 + currSecond;
+
+      const closestDateStr = closest.createdAt || closest.date || "";
+      if (!closestDateStr) return current;
+
+      const closeDate = new Date(closestDateStr);
+      const closeTotalSec = closeDate.getHours() * 3600 + closeDate.getMinutes() * 60 + closeDate.getSeconds();
+
+      const currDiff = currTotalSec - targetTotalSec;
+      const closeDiff = closeTotalSec - targetTotalSec;
+
+      if (Math.abs(currDiff) <= Math.abs(closeDiff)) {
+        return current;
+      }
+      return closest;
     }, resData[0]);
   } else {
     finalData = resData;
