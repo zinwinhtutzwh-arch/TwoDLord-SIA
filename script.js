@@ -88,7 +88,7 @@ async function morningArchiveTask() {
       await db.collection("history").doc(archiveDateStr).set(data);
       console.log(`Archived latest data to history/${archiveDateStr}`);
 
-      // 🚀 Cloudflare Worker ကို morning session / clear လုပ်ရန် ချက်ချင်း လှမ်းနိုးမည်
+      // 🚀 Cloudflare Worker ကို morning session / clear လုပ်ရန် ချက်ချင်း လှမ်းနိုးမည် (/trigger route ဖြင့်)
       const cfWorkerUrl = process.env.CF_WORKER_URL;
       if (cfWorkerUrl) {
         try {
@@ -261,7 +261,7 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
     }
   }
 
-  // 🚀 Cloudflare Worker ကို session နာမည်နှင့်တကွ ချက်ချင်း လှမ်းနိုးမည် (Trigger)
+  // 🚀 Cloudflare Worker ကို session နာမည်နှင့်တကွ ချက်ချင်း လှမ်းနိုးမည် (/trigger route သုံး၍)
   console.log(`[Triggering Worker] Waking up Cloudflare Worker for ${sectionName}...`);
   const cfWorkerUrl = process.env.CF_WORKER_URL;
   if (cfWorkerUrl) {
