@@ -88,22 +88,24 @@ async function morningArchiveTask() {
       await db.collection("history").doc(archiveDateStr).set(data);
       console.log(`Archived latest data to history/${archiveDateStr}`);
 
+      // 🚀 Cloudflare Worker ကို morning session / clear လုပ်ရန် ချက်ချင်း လှမ်းနိုးမည်
       const cfWorkerUrl = process.env.CF_WORKER_URL;
       if (cfWorkerUrl) {
         try {
-          const workerHistoryUrl = cfWorkerUrl.endsWith('/') 
-            ? `${cfWorkerUrl}history` 
-            : `${cfWorkerUrl}/history`;
+          const workerTriggerUrl = cfWorkerUrl.endsWith('/') 
+            ? `${cfWorkerUrl}trigger` 
+            : `${cfWorkerUrl}/trigger`;
 
-          await axios.post(workerHistoryUrl, {
-            action: "archive",
+          await axios.post(workerTriggerUrl, {
+            session: "morning",
+            action: "clear_latest",
             date: archiveDateStr,
             data: data
           }, { timeout: 5000 });
           
-          console.log("[Success] History data archived to Cloudflare Worker/KV.");
+          console.log("[Success] Sent clear_latest & archive action to Cloudflare Worker.");
         } catch (err) {
-          console.error("Error sending history to Cloudflare Worker:", err.message);
+          console.error("Error sending clear request to Cloudflare Worker:", err.message);
         }
       }
 
@@ -136,7 +138,10 @@ function getTargetDateTime(sectionName) {
   let targetHour = 12;
   let targetMinute = 1;
 
-  if (sectionName.toLowerCase().includes("4:30") || sectionName.toLowerCase().includes("evening")) {
+  if (sectionName.toLowerCase().includes("9:30") || sectionName.toLowerCase().includes("morning")) {
+    targetHour = 9;
+    targetMinute = 30;
+  } else if (sectionName.toLowerCase().includes("4:30") || sectionName.toLowerCase().includes("evening")) {
     targetHour = 16;
     targetMinute = 30;
   }
@@ -145,7 +150,7 @@ function getTargetDateTime(sectionName) {
   return new Date(targetString).getTime();
 }
 
-// 🚀 Target Time အတိအကျတွင် ယူ၍ Worker ကို ချက်ချင်းနိုးမည့် Function အသစ်
+// 🚀 Target Time အတိအကျတွင် ယူ၍ Worker ကို ချက်ချင်းနိုးမည့် Function
 async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
   console.log(`Checking holiday/weekend status for live fetch task (${sectionName})...`);
   if (await isHolidayOrWeekend()) {
@@ -193,13 +198,15 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
   
   let targetHour = 12;
   let targetMinute = 1;
-  if (sectionName.toLowerCase().includes("4:30") || sectionName.toLowerCase().includes("evening")) {
+  if (sectionName.toLowerCase().includes("9:30") || sectionName.toLowerCase().includes("morning")) {
+    targetHour = 9;
+    targetMinute = 30;
+  } else if (sectionName.toLowerCase().includes("4:30") || sectionName.toLowerCase().includes("evening")) {
     targetHour = 16;
     targetMinute = 30;
   }
 
   if (Array.isArray(resData) && resData.length > 0) {
-    // 🎯 Target Time အတိအကျနှင့် အကိုက်ညီဆုံး ဒေတာကို ရွေးချယ်ခြင်း
     finalData = resData.reduce((closest, current) => {
       const currentDateStr = current.createdAt || current.date || "";
       if (!currentDateStr) return closest;
@@ -254,7 +261,7 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
     }
   }
 
-  // 🚀 Cloudflare Worker ကို ချက်ချင်း လှမ်းနိုးမည် (Trigger)
+  // 🚀 Cloudflare Worker ကို session နာမည်နှင့်တကွ ချက်ချင်း လှမ်းနိုးမည် (Trigger)
   console.log(`[Triggering Worker] Waking up Cloudflare Worker for ${sectionName}...`);
   const cfWorkerUrl = process.env.CF_WORKER_URL;
   if (cfWorkerUrl) {
@@ -263,7 +270,10 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
         ? `${cfWorkerUrl}trigger` 
         : `${cfWorkerUrl}/trigger`;
 
+      const sessionParam = sectionName.toLowerCase().includes("9:30") ? "morning" : sectionName;
+
       await axios.post(workerTriggerUrl, {
+        session: sessionParam,
         section: sectionKey,
         action: "fetch_and_sync"
       }, { timeout: 3000 });
@@ -284,6 +294,9 @@ async function main() {
   if (task === "archive") {
     console.log("Running Morning Archive Task...");
     await morningArchiveTask();
+  } else if (task === "morning") {
+    console.log("Running Morning Fetch Task (9:30 AM)...");
+    await fetchAndSaveLive("https://signalr.crazybossy.com/api/info/Get2dlog_Bysection?section=09:30%20AM", "morning_data", "9:30 AM");
   } else if (task === "noon") {
     console.log("Running Noon Fetch Task (12:01 PM)...");
     await fetchAndSaveLive("https://signalr.crazybossy.com/api/info/Get2dlog_Bysection?section=12:01%20PM", "noon_data", "12:01 PM");
@@ -291,7 +304,7 @@ async function main() {
     console.log("Running Evening Fetch Task (4:30 PM)...");
     await fetchAndSaveLive("https://signalr.crazybossy.com/api/info/Get2dlog_Bysection?section=04:30%20PM", "evening_data", "4:30 PM");
   } else {
-    console.log("Please specify a valid task: archive, noon, or evening");
+    console.log("Please specify a valid task: archive, morning, noon, or evening");
   }
 
   console.log("Task execution finished.");
