@@ -27,7 +27,7 @@ async function isHolidayOrWeekend() {
     const response = await axios.get("https://api.lucky2d.com/api/holiday/GetHolidayList", { 
       timeout: 5000,
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "application/json, text/plain, */*"
       }
     });
@@ -44,7 +44,6 @@ async function isHolidayOrWeekend() {
   return false;
 }
 
-// 📅 အနီးဆုံး အတိတ်ဖွင့်ရက် (Last Business/Trading Day) ကို ရှာပေးမည့် Function
 async function getLastBusinessDay() {
   let date = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Yangon" }));
   date.setDate(date.getDate() - 1);
@@ -54,7 +53,7 @@ async function getLastBusinessDay() {
     const response = await axios.get("https://api.lucky2d.com/api/holiday/GetHolidayList", { 
       timeout: 5000,
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "application/json, text/plain, */*"
       }
     });
@@ -163,7 +162,6 @@ function getTargetDateTime(sectionName) {
   return new Date(targetString).getTime();
 }
 
-// 🚀 API မှ Data များကို ယူ၍ သိမ်းဆည်းမည့် Function
 async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
   console.log(`Checking holiday/weekend status for live fetch task (${sectionName})...`);
   if (await isHolidayOrWeekend()) {
@@ -193,8 +191,12 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
         timeout: 5000,
         headers: {
           "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept": "application/json, text/plain, */*",
+          "Accept-Language": "en-US,en;q=0.9",
           "Referer": "https://setlive.myanmarnode.com/",
-          "Accept": "application/json, text/plain, */*"
+          "Origin": "https://setlive.myanmarnode.com",
+          // လိုအပ်ပါက အောက်ပါ Cookie နေရာတွင် Browser မှ ရထားသော Cookie string ကို ထည့်နိုင်ပါသည်
+          "Cookie": process.env.API_COOKIE || ""
         }
       });
       if (response && response.data) {
@@ -216,7 +218,6 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
   const resData = response.data;
   let formattedData = null;
 
-  // 🌐 Modern Internet API အတွက် သီးသန့် structure formatting
   if (apiUrl.includes("setlive.myanmarnode.com")) {
     const rawData = resData.data || resData;
     let modernVal = "";
@@ -240,7 +241,6 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
       }
     };
   } else {
-    // မူရင်း API များအတွက် logic အဟောင်း
     let finalData = null;
     let targetHour = 12;
     let targetMinute = 1;
@@ -317,29 +317,6 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
       console.log(`[Firebase Updated] Successfully saved exact live data for ${sectionName} under key [${sectionKey}].`);
     } catch (dbErr) {
       console.error("Error saving data to Firebase:", dbErr.message);
-    }
-  }
-
-  // 🚀 Cloudflare Worker သို့ လှမ်းနိုးမည်
-  console.log(`[Triggering Worker] Waking up Cloudflare Worker for ${sectionName}...`);
-  const cfWorkerUrl = process.env.CF_WORKER_URL;
-  if (cfWorkerUrl) {
-    try {
-      const workerTriggerUrl = cfWorkerUrl.endsWith('/') 
-        ? `${cfWorkerUrl}trigger` 
-        : `${cfWorkerUrl}/trigger`;
-
-      const sessionParam = sectionName.toLowerCase().includes("9:30") ? "morning" : sectionName;
-
-      await axios.post(workerTriggerUrl, {
-        session: sessionParam,
-        section: sectionKey,
-        action: "fetch_and_sync"
-      }, { timeout: 3000 });
-
-      console.log(`[Success] Successfully woke up Cloudflare Worker for ${sectionName}.`);
-    } catch (workerErr) {
-      console.error("Error triggering Cloudflare Worker:", workerErr.message);
     }
   }
 
