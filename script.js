@@ -1,6 +1,5 @@
 const { initializeApp, cert } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
-const axios = require("axios");
 
 let serviceAccount;
 if (process.env.FIREBASE_SERVICE_ACCOUNT) {
@@ -15,6 +14,36 @@ initializeApp({
 
 const db = getFirestore();
 
+// 🌐 Browser နဲ့ တထပ်တည်းကျသော Standard Headers များနှင့် fetch လုပ်မည့် Helper Function
+async function fetchWithBrowserHeaders(url) {
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
+      "Cache-Control": "no-cache",
+      "Pragma": "no-cache",
+      "Sec-Ch-Ua": '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+      "Sec-Ch-Ua-Mobile": "?0",
+      "Sec-Ch-Ua-Platform": '"Windows"',
+      "Sec-Fetch-Dest": "document",
+      "Sec-Fetch-Mode": "navigate",
+      "Sec-Fetch-Site": "none",
+      "Sec-Fetch-User": "?1",
+      "Upgrade-Insecure-Requests": "1",
+      "Referer": "https://setlive.myanmarnode.com/",
+      "Origin": "https://setlive.myanmarnode.com"
+    }
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+
+  return await response.json();
+}
+
 async function isHolidayOrWeekend() {
   const now = new Date();
   const dayOfWeek = now.getDay();
@@ -24,14 +53,7 @@ async function isHolidayOrWeekend() {
   }
 
   try {
-    const response = await axios.get("https://api.lucky2d.com/api/holiday/GetHolidayList", { 
-      timeout: 5000,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/plain, */*"
-      }
-    });
-    const holidays = response.data;
+    const holidays = await fetchWithBrowserHeaders("https://api.lucky2d.com/api/holiday/GetHolidayList");
     const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Yangon' });
     if (Array.isArray(holidays) && holidays.includes(todayStr)) {
       console.log("Today is a public holiday.");
@@ -50,15 +72,9 @@ async function getLastBusinessDay() {
 
   let holidays = [];
   try {
-    const response = await axios.get("https://api.lucky2d.com/api/holiday/GetHolidayList", { 
-      timeout: 5000,
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/plain, */*"
-      }
-    });
-    if (Array.isArray(response.data)) {
-      holidays = response.data;
+    const data = await fetchWithBrowserHeaders("https://api.lucky2d.com/api/holiday/GetHolidayList");
+    if (Array.isArray(data)) {
+      holidays = data;
     }
   } catch (error) {
     console.error("Error fetching holiday list for last business day:", error.message);
@@ -106,12 +122,16 @@ async function morningArchiveTask() {
             ? `${cfWorkerUrl}trigger` 
             : `${cfWorkerUrl}/trigger`;
 
-          await axios.post(workerTriggerUrl, {
-            session: "morning",
-            action: "clear_latest",
-            date: archiveDateStr,
-            data: data
-          }, { timeout: 5000 });
+          await fetch(workerTriggerUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              session: "morning",
+              action: "clear_latest",
+              date: archiveDateStr,
+              data: data
+            })
+          });
           
           console.log("[Success] Sent clear_latest & archive action to Cloudflare Worker.");
         } catch (err) {
@@ -184,22 +204,11 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
 
   console.log(`[Executing] Fetching exact live data for ${sectionName} from API: ${apiUrl}`);
 
-  let response = null;
+  let resData = null;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      response = await axios.get(apiUrl, { 
-        timeout: 5000,
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Accept": "application/json, text/plain, */*",
-          "Accept-Language": "en-US,en;q=0.9",
-          "Referer": "https://setlive.myanmarnode.com/",
-          "Origin": "https://setlive.myanmarnode.com",
-          // လိုအပ်ပါက အောက်ပါ Cookie နေရာတွင် Browser မှ ရထားသော Cookie string ကို ထည့်နိုင်ပါသည်
-          "Cookie": process.env.API_COOKIE || ""
-        }
-      });
-      if (response && response.data) {
+      resData = await fetchWithBrowserHeaders(apiUrl);
+      if (resData) {
         break;
       }
     } catch (err) {
@@ -210,12 +219,11 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
     }
   }
 
-  if (!response || !response.data) {
+  if (!resData) {
     console.error(`[Failed] Could not fetch data for ${sectionName} after multiple attempts.`);
     return;
   }
 
-  const resData = response.data;
   let formattedData = null;
 
   if (apiUrl.includes("setlive.myanmarnode.com")) {
@@ -317,6 +325,33 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
       console.log(`[Firebase Updated] Successfully saved exact live data for ${sectionName} under key [${sectionKey}].`);
     } catch (dbErr) {
       console.error("Error saving data to Firebase:", dbErr.message);
+    }
+  }
+
+  // 🚀 Cloudflare Worker သို့ လှမ်းနိုးမည်
+  console.log(`[Triggering Worker] Waking up Cloudflare Worker for ${sectionName}...`);
+  const cfWorkerUrl = process.env.CF_WORKER_URL;
+  if (cfWorkerUrl) {
+    try {
+      const workerTriggerUrl = cfWorkerUrl.endsWith('/') 
+        ? `${cfWorkerUrl}trigger` 
+        : `${cfWorkerUrl}/trigger`;
+
+      const sessionParam = sectionName.toLowerCase().includes("9:30") ? "morning" : sectionName;
+
+      await fetch(workerTriggerUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session: sessionParam,
+          section: sectionKey,
+          action: "fetch_and_sync"
+        })
+      });
+
+      console.log(`[Success] Successfully woke up Cloudflare Worker for ${sectionName}.`);
+    } catch (workerErr) {
+      console.error("Error triggering Cloudflare Worker:", workerErr.message);
     }
   }
 
