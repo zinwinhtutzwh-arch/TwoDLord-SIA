@@ -41,7 +41,7 @@ async function isHolidayOrWeekend() {
 // 📅 အနီးဆုံး အတိတ်ဖွင့်ရက် (Last Business/Trading Day) ကို ရှာပေးမည့် Function
 async function getLastBusinessDay() {
   let date = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Yangon" }));
-  date.setDate(date.getDate() - 1); // မနေ့က စတင်စစ်မည်
+  date.setDate(date.getDate() - 1);
 
   let holidays = [];
   try {
@@ -54,17 +54,17 @@ async function getLastBusinessDay() {
   }
 
   while (true) {
-    const dayOfWeek = date.getDay(); // 0 = Sun, 6 = Sat
+    const dayOfWeek = date.getDay();
     const dateStr = date.toLocaleDateString('en-CA', { timeZone: 'Asia/Yangon' });
 
     const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
     const isHoliday = holidays.includes(dateStr);
 
     if (!isWeekend && !isHoliday) {
-      return dateStr; // ဖွင့်ရက်စွဲ ရပြီဆိုပါက Return ပြန်မည်
+      return dateStr;
     }
 
-    date.setDate(date.getDate() - 1); // စနေ/တနင်္ဂနွေ သို့မဟုတ် ပိတ်ရက်ဖြစ်ပါက ၁ ရက် ထပ်ဆုတ်မည်
+    date.setDate(date.getDate() - 1);
   }
 }
 
@@ -88,7 +88,6 @@ async function morningArchiveTask() {
       await db.collection("history").doc(archiveDateStr).set(data);
       console.log(`Archived latest data to history/${archiveDateStr}`);
 
-      // 🚀 Cloudflare Worker ကို morning session / clear လုပ်ရန် ချက်ချင်း လှမ်းနိုးမည် (/trigger route ဖြင့်)
       const cfWorkerUrl = process.env.CF_WORKER_URL;
       if (cfWorkerUrl) {
         try {
@@ -130,10 +129,9 @@ async function morningArchiveTask() {
   }
 }
 
-// 🎯 Target Time အတိအကျကို တွက်ထုတ်မည့် Helper Function (Asia/Yangon အချိန်အရ)
 function getTargetDateTime(sectionName) {
   const now = new Date();
-  const yangonDateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Yangon' }); // YYYY-MM-DD
+  const yangonDateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Yangon' });
   
   let targetHour = 12;
   let targetMinute = 1;
@@ -141,6 +139,9 @@ function getTargetDateTime(sectionName) {
   if (sectionName.toLowerCase().includes("9:30") || sectionName.toLowerCase().includes("morning")) {
     targetHour = 9;
     targetMinute = 30;
+  } else if (sectionName.toLowerCase().includes("2:00") || sectionName.toLowerCase().includes("noon")) {
+    targetHour = 14;
+    targetMinute = 0;
   } else if (sectionName.toLowerCase().includes("4:30") || sectionName.toLowerCase().includes("evening")) {
     targetHour = 16;
     targetMinute = 30;
@@ -150,7 +151,7 @@ function getTargetDateTime(sectionName) {
   return new Date(targetString).getTime();
 }
 
-// 🚀 Target Time အတိအကျတွင် ယူ၍ Worker ကို ချက်ချင်းနိုးမည့် Function
+// 🚀 မူရင်း API သို့မဟုတ် Modern Internet API မှ Data များကို ယူ၍ သိမ်းဆည်းမည့် Function
 async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
   console.log(`Checking holiday/weekend status for live fetch task (${sectionName})...`);
   if (await isHolidayOrWeekend()) {
@@ -194,74 +195,118 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
   }
 
   const resData = response.data;
-  let finalData = null;
-  
-  let targetHour = 12;
-  let targetMinute = 1;
-  if (sectionName.toLowerCase().includes("9:30") || sectionName.toLowerCase().includes("morning")) {
-    targetHour = 9;
-    targetMinute = 30;
-  } else if (sectionName.toLowerCase().includes("4:30") || sectionName.toLowerCase().includes("evening")) {
-    targetHour = 16;
-    targetMinute = 30;
-  }
+  let formattedData = null;
 
-  if (Array.isArray(resData) && resData.length > 0) {
-    finalData = resData.reduce((closest, current) => {
-      const currentDateStr = current.createdAt || current.date || "";
-      if (!currentDateStr) return closest;
+  // 🌐 Modern Internet API အတွက် သီးသန့် structure formatting
+  if (apiUrl.includes("setlive.myanmarnode.com")) {
+    const rawData = resData.data || resData;
+    let modernVal = "";
+    let internetVal = "";
+    let timeKey = "";
 
-      const currDate = new Date(currentDateStr);
-      const currHour = currDate.getHours();
-      const currMinute = currDate.getMinutes();
-      const currSecond = currDate.getSeconds();
+    if (sectionName.toLowerCase().includes("9:30")) {
+      modernVal = rawData.modern_930 || "";
+      internetVal = rawData.internet_930 || "";
+      timeKey = "9:30am";
+    } else if (sectionName.toLowerCase().includes("2:00")) {
+      modernVal = rawData.modern_200 || "";
+      internetVal = rawData.internet_200 || "";
+      timeKey = "2:00pm";
+    }
 
-      const targetTotalSec = targetHour * 3600 + targetMinute * 60;
-      const currTotalSec = currHour * 3600 + currMinute * 60 + currSecond;
-
-      const closestDateStr = closest.createdAt || closest.date || "";
-      if (!closestDateStr) return current;
-
-      const closeDate = new Date(closestDateStr);
-      const closeTotalSec = closeDate.getHours() * 3600 + closeDate.getMinutes() * 60 + closeDate.getSeconds();
-
-      const currDiff = currTotalSec - targetTotalSec;
-      const closeDiff = closeTotalSec - targetTotalSec;
-
-      if (Math.abs(currDiff) <= Math.abs(closeDiff)) {
-        return current;
+    // လိုချင်သော structure အတိုင်း nested object ပုံစံ ဆောက်မည်
+    formattedData = {
+      [timeKey]: {
+        modern: modernVal !== "" ? String(modernVal).padStart(2, "0") : "",
+        internet: internetVal !== "" ? String(internetVal).padStart(2, "0") : ""
       }
-      return closest;
-    }, resData[0]);
+    };
   } else {
-    finalData = resData;
+    // မူရင်း API များအတွက် logic အဟောင်း
+    let finalData = null;
+    let targetHour = 12;
+    let targetMinute = 1;
+    if (sectionName.toLowerCase().includes("9:30") || sectionName.toLowerCase().includes("morning")) {
+      targetHour = 9;
+      targetMinute = 30;
+    } else if (sectionName.toLowerCase().includes("4:30") || sectionName.toLowerCase().includes("evening")) {
+      targetHour = 16;
+      targetMinute = 30;
+    }
+
+    if (Array.isArray(resData) && resData.length > 0) {
+      finalData = resData.reduce((closest, current) => {
+        const currentDateStr = current.createdAt || current.date || "";
+        if (!currentDateStr) return closest;
+
+        const currDate = new Date(currentDateStr);
+        const currHour = currDate.getHours();
+        const currMinute = currDate.getMinutes();
+        const currSecond = currDate.getSeconds();
+
+        const targetTotalSec = targetHour * 3600 + targetMinute * 60;
+        const currTotalSec = currHour * 3600 + currMinute * 60 + currSecond;
+
+        const closestDateStr = closest.createdAt || closest.date || "";
+        if (!closestDateStr) return current;
+
+        const closeDate = new Date(closestDateStr);
+        const closeTotalSec = closeDate.getHours() * 3600 + closeDate.getMinutes() * 60 + closeDate.getSeconds();
+
+        const currDiff = currTotalSec - targetTotalSec;
+        const closeDiff = closeTotalSec - targetTotalSec;
+
+        if (Math.abs(currDiff) <= Math.abs(closeDiff)) {
+          return current;
+        }
+        return closest;
+      }, resData[0]);
+    } else {
+      finalData = resData;
+    }
+
+    if (finalData) {
+      const rawTwod = finalData.result ?? finalData.twod ?? finalData.number ?? "";
+      const formattedTwod = rawTwod !== "" ? String(rawTwod).padStart(2, "0") : "";
+
+      formattedData = {
+        section: sectionName,
+        set: String(finalData.set || ""),
+        val: String(finalData.value || finalData.val || ""),
+        twod: formattedTwod
+      };
+    }
   }
 
-  if (finalData) {
-    const rawTwod = finalData.result ?? finalData.twod ?? finalData.number ?? "";
-    const formattedTwod = rawTwod !== "" ? String(rawTwod).padStart(2, "0") : "";
-
-    const formattedData = {
-      section: sectionName,
-      set: String(finalData.set || ""),
-      val: String(finalData.value || finalData.val || ""),
-      twod: formattedTwod
-    };
-
+  if (formattedData) {
     try {
       const latestRef = db.collection("latest").doc("current");
-      await latestRef.set({
-        [sectionKey]: formattedData,
-        updatedAt: FieldValue.serverTimestamp()
-      }, { merge: true });
+      
+      if (apiUrl.includes("setlive.myanmarnode.com")) {
+        // modern_internet အတွက် nested field ပုံစံဖြင့် merge လုပ်မည် (9:30am နဲ့ 2:00pm နှစ်ခုလုံး ပေါင်းနေစေရန်)
+        const timeKey = sectionName.toLowerCase().includes("9:30") ? "9:30am" : "2:00pm";
+        const timeKeyData = formattedData[timeKey];
+        
+        await latestRef.set({
+          [sectionKey]: {
+            [timeKey]: timeKeyData
+          },
+          updatedAt: FieldValue.serverTimestamp()
+        }, { merge: true });
+      } else {
+        await latestRef.set({
+          [sectionKey]: formattedData,
+          updatedAt: FieldValue.serverTimestamp()
+        }, { merge: true });
+      }
 
-      console.log(`[Firebase Updated] Successfully saved exact live data for ${sectionName}.`);
+      console.log(`[Firebase Updated] Successfully saved exact live data for ${sectionName} under key [${sectionKey}].`);
     } catch (dbErr) {
       console.error("Error saving data to Firebase:", dbErr.message);
     }
   }
 
-  // 🚀 Cloudflare Worker ကို session နာမည်နှင့်တကွ ချက်ချင်း လှမ်းနိုးမည် (/trigger route သုံး၍)
+  // 🚀 Cloudflare Worker သို့ လှမ်းနိုးမည်
   console.log(`[Triggering Worker] Waking up Cloudflare Worker for ${sectionName}...`);
   const cfWorkerUrl = process.env.CF_WORKER_URL;
   if (cfWorkerUrl) {
@@ -291,20 +336,25 @@ async function main() {
   const task = process.argv[2];
   console.log("Received task argument:", task);
 
+  const modernInternetUrl = "https://setlive.myanmarnode.com/live.json?_st=121bb69dbc947c6b14c5f36d7206c76b31291d8241ca5c60693ec95764ef8c3a";
+
   if (task === "archive") {
     console.log("Running Morning Archive Task...");
     await morningArchiveTask();
   } else if (task === "morning") {
     console.log("Running Morning Fetch Task (9:30 AM)...");
-    await fetchAndSaveLive("https://signalr.crazybossy.com/api/info/Get2dlog_Bysection?section=09:30%20AM", "morning_data", "9:30 AM");
+    await fetchAndSaveLive(modernInternetUrl, "modern_internet", "9:30 AM");
   } else if (task === "noon") {
     console.log("Running Noon Fetch Task (12:01 PM)...");
     await fetchAndSaveLive("https://signalr.crazybossy.com/api/info/Get2dlog_Bysection?section=12:01%20PM", "noon_data", "12:01 PM");
+  } else if (task === "two_pm") {
+    console.log("Running 2:00 PM Fetch Task...");
+    await fetchAndSaveLive(modernInternetUrl, "modern_internet", "2:00 PM");
   } else if (task === "evening") {
     console.log("Running Evening Fetch Task (4:30 PM)...");
     await fetchAndSaveLive("https://signalr.crazybossy.com/api/info/Get2dlog_Bysection?section=04:30%20PM", "evening_data", "4:30 PM");
   } else {
-    console.log("Please specify a valid task: archive, morning, noon, or evening");
+    console.log("Please specify a valid task: archive, morning, noon, two_pm, or evening");
   }
 
   console.log("Task execution finished.");
