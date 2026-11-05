@@ -1,73 +1,109 @@
 name: 2D Auto Pipeline
 
+
+
 on:
+
   repository_dispatch:
+
     types: [run-2d-task]
+
   workflow_dispatch:
+
     inputs:
+
       task:
+
         description: 'Select task to run'
+
         required: true
+
         default: 'noon'
+
         type: choice
+
         options:
+
           - archive
-          - morning
+
           - noon
-          - two_pm
+
           - evening
 
+
+
 jobs:
+
   run-tasks:
+
     runs-on: ubuntu-latest
+
     steps:
+
       - name: Checkout Code
+
         uses: actions/checkout@v4
 
+
+
       - name: Setup Node.js
+
         uses: actions/setup-node@v4
+
         with:
+
           node-version: '20'
 
+
+
       - name: Install Dependencies
+
         run: npm install
 
-      - name: Run Morning Fetch Task (9:30 AM)
-        if: github.event.client_payload.task == 'morning' || (github.event_name == 'workflow_dispatch' && inputs.task == 'morning')
-        env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          CF_WORKER_URL: ${{ secrets.CF_WORKER_URL }}
-          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
-        run: node script.js morning
 
-      - name: Run Noon Fetch Task (12:01 PM)
+
+      - name: Run Noon Fetch Task
+
         if: github.event.client_payload.task == 'noon' || (github.event_name == 'workflow_dispatch' && inputs.task == 'noon')
+
         env:
+
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
           CF_WORKER_URL: ${{ secrets.CF_WORKER_URL }}
+
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
+
         run: node script.js noon
 
-      - name: Run 2:00 PM Fetch Task
-        if: github.event.client_payload.task == 'two_pm' || (github.event_name == 'workflow_dispatch' && inputs.task == 'two_pm')
-        env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          CF_WORKER_URL: ${{ secrets.CF_WORKER_URL }}
-          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
-        run: node script.js two_pm
 
-      - name: Run Evening Fetch Task (4:30 PM)
+
+      - name: Run Evening Fetch Task
+
         if: github.event.client_payload.task == 'evening' || (github.event_name == 'workflow_dispatch' && inputs.task == 'evening')
+
         env:
+
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
           CF_WORKER_URL: ${{ secrets.CF_WORKER_URL }}
+
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
+
         run: node script.js evening
 
+
+
       - name: Run Archive Task
+
         if: github.event.client_payload.task == 'archive' || (github.event_name == 'workflow_dispatch' && inputs.task == 'archive')
+
         env:
+
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
           CF_WORKER_URL: ${{ secrets.CF_WORKER_URL }}
+
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
+
         run: node script.js archive
