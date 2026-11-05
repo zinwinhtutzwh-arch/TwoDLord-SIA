@@ -12,7 +12,9 @@ on:
         type: choice
         options:
           - archive
+          - morning
           - noon
+          - two_pm
           - evening
 
 jobs:
@@ -30,7 +32,15 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
-      - name: Run Noon Fetch Task
+      - name: Run Morning Fetch Task (9:30 AM)
+        if: github.event.client_payload.task == 'morning' || (github.event_name == 'workflow_dispatch' && inputs.task == 'morning')
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          CF_WORKER_URL: ${{ secrets.CF_WORKER_URL }}
+          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
+        run: node script.js morning
+
+      - name: Run Noon Fetch Task (12:01 PM)
         if: github.event.client_payload.task == 'noon' || (github.event_name == 'workflow_dispatch' && inputs.task == 'noon')
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
@@ -38,7 +48,15 @@ jobs:
           GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
         run: node script.js noon
 
-      - name: Run Evening Fetch Task
+      - name: Run 2:00 PM Fetch Task
+        if: github.event.client_payload.task == 'two_pm' || (github.event_name == 'workflow_dispatch' && inputs.task == 'two_pm')
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          CF_WORKER_URL: ${{ secrets.CF_WORKER_URL }}
+          GOOGLE_SHEET_URL: ${{ secrets.GOOGLE_SHEET_URL }}
+        run: node script.js two_pm
+
+      - name: Run Evening Fetch Task (4:30 PM)
         if: github.event.client_payload.task == 'evening' || (github.event_name == 'workflow_dispatch' && inputs.task == 'evening')
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
