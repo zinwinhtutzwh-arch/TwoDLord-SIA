@@ -24,7 +24,13 @@ async function isHolidayOrWeekend() {
   }
 
   try {
-    const response = await axios.get("https://api.lucky2d.com/api/holiday/GetHolidayList", { timeout: 5000 });
+    const response = await axios.get("https://api.lucky2d.com/api/holiday/GetHolidayList", { 
+      timeout: 5000,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json, text/plain, */*"
+      }
+    });
     const holidays = response.data;
     const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Yangon' });
     if (Array.isArray(holidays) && holidays.includes(todayStr)) {
@@ -45,7 +51,13 @@ async function getLastBusinessDay() {
 
   let holidays = [];
   try {
-    const response = await axios.get("https://api.lucky2d.com/api/holiday/GetHolidayList", { timeout: 5000 });
+    const response = await axios.get("https://api.lucky2d.com/api/holiday/GetHolidayList", { 
+      timeout: 5000,
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "application/json, text/plain, */*"
+      }
+    });
     if (Array.isArray(response.data)) {
       holidays = response.data;
     }
@@ -139,7 +151,7 @@ function getTargetDateTime(sectionName) {
   if (sectionName.toLowerCase().includes("9:30") || sectionName.toLowerCase().includes("morning")) {
     targetHour = 9;
     targetMinute = 30;
-  } else if (sectionName.toLowerCase().includes("2:00") || sectionName.toLowerCase().includes("noon")) {
+  } else if (sectionName.toLowerCase().includes("2:00") || sectionName.toLowerCase().includes("two_pm")) {
     targetHour = 14;
     targetMinute = 0;
   } else if (sectionName.toLowerCase().includes("4:30") || sectionName.toLowerCase().includes("evening")) {
@@ -151,7 +163,7 @@ function getTargetDateTime(sectionName) {
   return new Date(targetString).getTime();
 }
 
-// 🚀 မူရင်း API သို့မဟုတ် Modern Internet API မှ Data များကို ယူ၍ သိမ်းဆည်းမည့် Function
+// 🚀 API မှ Data များကို ယူ၍ သိမ်းဆည်းမည့် Function
 async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
   console.log(`Checking holiday/weekend status for live fetch task (${sectionName})...`);
   if (await isHolidayOrWeekend()) {
@@ -177,7 +189,14 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
   let response = null;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      response = await axios.get(apiUrl, { timeout: 5000 });
+      response = await axios.get(apiUrl, { 
+        timeout: 5000,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Referer": "https://setlive.myanmarnode.com/",
+          "Accept": "application/json, text/plain, */*"
+        }
+      });
       if (response && response.data) {
         break;
       }
@@ -214,7 +233,6 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
       timeKey = "2:00pm";
     }
 
-    // လိုချင်သော structure အတိုင်း nested object ပုံစံ ဆောက်မည်
     formattedData = {
       [timeKey]: {
         modern: modernVal !== "" ? String(modernVal).padStart(2, "0") : "",
@@ -226,10 +244,7 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
     let finalData = null;
     let targetHour = 12;
     let targetMinute = 1;
-    if (sectionName.toLowerCase().includes("9:30") || sectionName.toLowerCase().includes("morning")) {
-      targetHour = 9;
-      targetMinute = 30;
-    } else if (sectionName.toLowerCase().includes("4:30") || sectionName.toLowerCase().includes("evening")) {
+    if (sectionName.toLowerCase().includes("4:30") || sectionName.toLowerCase().includes("evening")) {
       targetHour = 16;
       targetMinute = 30;
     }
@@ -283,7 +298,6 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
       const latestRef = db.collection("latest").doc("current");
       
       if (apiUrl.includes("setlive.myanmarnode.com")) {
-        // modern_internet အတွက် nested field ပုံစံဖြင့် merge လုပ်မည် (9:30am နဲ့ 2:00pm နှစ်ခုလုံး ပေါင်းနေစေရန်)
         const timeKey = sectionName.toLowerCase().includes("9:30") ? "9:30am" : "2:00pm";
         const timeKeyData = formattedData[timeKey];
         
