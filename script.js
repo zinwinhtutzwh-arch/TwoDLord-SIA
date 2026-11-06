@@ -68,8 +68,9 @@ async function getLastBusinessDay() {
   }
 }
 
+// 📌 9:30 AM (Morning) Task - Firebase ထဲတွင်သာ လုပ်ဆောင်မည့် Archive နှင့် Clear လုပ်ငန်းစဉ်
 async function morningArchiveTask() {
-  console.log("Checking holiday/weekend status for archive task...");
+  console.log("Checking holiday/weekend status for morning archive task...");
   if (await isHolidayOrWeekend()) {
     console.log("Today is a weekend or holiday. Skipping morning archive task.");
     return;
@@ -138,9 +139,9 @@ function getTargetDateTime(sectionName) {
   let targetHour = 12;
   let targetMinute = 1;
 
-  if (sectionName.toLowerCase().includes("9:30") || sectionName.toLowerCase().includes("morning")) {
-    targetHour = 9;
-    targetMinute = 30;
+  if (sectionName.toLowerCase().includes("12:01") || sectionName.toLowerCase().includes("noon")) {
+    targetHour = 12;
+    targetMinute = 1;
   } else if (sectionName.toLowerCase().includes("4:30") || sectionName.toLowerCase().includes("evening")) {
     targetHour = 16;
     targetMinute = 30;
@@ -150,7 +151,7 @@ function getTargetDateTime(sectionName) {
   return new Date(targetString).getTime();
 }
 
-// 🚀 Target Time အတိအကျတွင် ယူ၍ Worker ကို ချက်ချင်းနိုးမည့် Function
+// 🚀 Noon နှင့် Evening Data များကို API မှ ယူ၍ Firebase သို့ သိမ်းမည့် Function (createdAt ကို မကြည့်ဘဲ အချိန် string ဖြင့် တိုက်စစ်သည်)
 async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
   console.log(`Checking holiday/weekend status for live fetch task (${sectionName})...`);
   if (await isHolidayOrWeekend()) {
@@ -196,16 +197,20 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
   const resData = response.data;
   let finalData = null;
   
-  // 🎯 section အလိုက် ရှာမယ့် အချိန် string ကို တိကျစွာ သတ်မှတ်ခြင်း (createdAt ကို လုံးဝမကြည့်ဘဲ dateStr ကို endsWith ဖြင့် တိုက်စစ်မည်)
-  let targetTimeStr = "12:01:00"; // noon အတွက် ပုံသေ
-  if (sectionName.toLowerCase().includes("9:30") || sectionName.toLowerCase().includes("morning")) {
-    targetTimeStr = "09:30:00";
+  // Section အလိုက် ရှာရမည့် တိကျသော အချိန် string (createdAt ကို မကြည့်ဘဲ ဤ string ကိုသာ တိုက်စစ်မည်)
+  let targetTimeString = "12:01:00";
+  if (sectionName.toLowerCase().includes("12:01") || sectionName.toLowerCase().includes("noon")) {
+    targetTimeString = "12:01:00";
   } else if (sectionName.toLowerCase().includes("4:30") || sectionName.toLowerCase().includes("evening")) {
-    targetTimeStr = "04:30:00";
+    targetTimeString = "04:30:00";
   }
 
   if (Array.isArray(resData) && resData.length > 0) {
-    finalData = resData.find(item => item.dateStr && item.dateStr.endsWith(targetTimeStr));
+    // createdAt ကို လုံးဝ မကြည့်ဘဲ၊ data ထဲက အချိန် string (ဥပမာ - "04:30:00") ပါဝင်မှုကို တိုက်ရိုက် စစ်ဆေးမည်
+    finalData = resData.find(item => {
+      const timeVal = item.time || item.date || "";
+      return String(timeVal).includes(targetTimeString);
+    }) || resData[0]; // အကယ်၍ အတိအကျ တိုက်ဆိုင်တာ မရှိပါက ပထမဆုံး data ကို fallback အနေဖြင့် ယူမည်
   } else {
     finalData = resData;
   }
@@ -232,11 +237,9 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
     } catch (dbErr) {
       console.error("Error saving data to Firebase:", dbErr.message);
     }
-  } else {
-    console.warn(`[Warning] No matching data found with exact time string: ${targetTimeStr} for ${sectionName}`);
   }
 
-  // 🚀 Cloudflare Worker ကို session နာမည်နှင့်တကွ ချက်ချင်း လှမ်းနိုးမည်
+  // 🚀 Cloudflare Worker ကို session နာမည်နှင့်တကွ ချက်ချင်း လှမ်းနိုးမည် (/trigger route သုံး၍)
   console.log(`[Triggering Worker] Waking up Cloudflare Worker for ${sectionName}...`);
   const cfWorkerUrl = process.env.CF_WORKER_URL;
   if (cfWorkerUrl) {
@@ -245,10 +248,8 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
         ? `${cfWorkerUrl}trigger` 
         : `${cfWorkerUrl}/trigger`;
 
-      const sessionParam = sectionName.toLowerCase().includes("9:30") ? "morning" : sectionName;
-
       await axios.post(workerTriggerUrl, {
-        session: sessionParam,
+        session: sectionName,
         section: sectionKey,
         action: "fetch_and_sync"
       }, { timeout: 3000 });
@@ -266,20 +267,17 @@ async function main() {
   const task = process.argv[2];
   console.log("Received task argument:", task);
 
-  if (task === "archive") {
-    console.log("Running Morning Archive Task...");
+  if (task === "morning") {
+    console.log("Running Morning Archive Task (Firebase-based)...");
     await morningArchiveTask();
-  } else if (task === "morning") {
-    console.log("Running Morning Fetch Task (9:30 AM)...");
-    await fetchAndSaveLive("https://api.lucky2d.com/api/info/Get2dlog", "morning_data", "9:30 AM");
   } else if (task === "noon") {
     console.log("Running Noon Fetch Task (12:01 PM)...");
-    await fetchAndSaveLive("https://api.lucky2d.com/api/info/Get2dlog", "noon_data", "12:01 PM");
+    await fetchAndSaveLive("https://signalr.crazybossy.com/api/info/Get2dlog_Bysection?section=12:01%20PM", "noon_data", "12:01 PM");
   } else if (task === "evening") {
     console.log("Running Evening Fetch Task (4:30 PM)...");
-    await fetchAndSaveLive("https://api.lucky2d.com/api/info/Get2dlog", "evening_data", "04:30 PM");
+    await fetchAndSaveLive("https://signalr.crazybossy.com/api/info/Get2dlog_Bysection?section=04:30%20PM", "evening_data", "4:30 PM");
   } else {
-    console.log("Please specify a valid task: archive, morning, noon, or evening");
+    console.log("Please specify a valid task: morning, noon, or evening");
   }
 
   console.log("Task execution finished.");
