@@ -68,13 +68,9 @@ async function getLastBusinessDay() {
   }
 }
 
-// 📌 9:30 AM (Morning) Task - Firebase ထဲတွင်သာ လုပ်ဆောင်မည့် Archive နှင့် Clear လုပ်ငန်းစဉ်
+// 📌 Morning Archive Task - Firebase ထဲတွင် data ရှိပါက ပိတ်ရက်မစစ်ဘဲ တိုက်ရိုက် Archive လုပ်မည်
 async function morningArchiveTask() {
-  console.log("Checking holiday/weekend status for morning archive task...");
-  if (await isHolidayOrWeekend()) {
-    console.log("Today is a weekend or holiday. Skipping morning archive task.");
-    return;
-  }
+  console.log("Running Morning Archive Task (Direct Firebase Archive)...");
 
   try {
     const latestRef = db.collection("latest").doc("current");
@@ -82,6 +78,7 @@ async function morningArchiveTask() {
 
     if (latestDoc.exists) {
       const data = latestDoc.data();
+      console.log("Fetched latest/current data for archiving:", data);
       
       const archiveDateStr = await getLastBusinessDay();
       console.log(`Calculated target archive date: ${archiveDateStr}`);
@@ -89,7 +86,7 @@ async function morningArchiveTask() {
       await db.collection("history").doc(archiveDateStr).set(data);
       console.log(`Archived latest data to history/${archiveDateStr}`);
 
-      // 🚀 Cloudflare Worker ကို morning session / clear လုပ်ရန် ချက်ချင်း လှမ်းနိုးမည် (/trigger route ဖြင့်)
+      // 🚀 Cloudflare Worker ကို morning session / clear လုပ်ရန် ချက်ချင်း လှမ်းနိုးမည်
       const cfWorkerUrl = process.env.CF_WORKER_URL;
       if (cfWorkerUrl) {
         try {
@@ -151,7 +148,7 @@ function getTargetDateTime(sectionName) {
   return new Date(targetString).getTime();
 }
 
-// 🚀 Noon နှင့် Evening Data များကို API မှ ယူ၍ Firebase သို့ သိမ်းမည့် Function (createdAt ကို လုံးဝ မကြည့်ဘဲ အချိန် string ဖြင့် တိုက်စစ်သည်)
+// 🚀 Noon နှင့် Evening Data များကို API မှ ယူ၍ Firebase သို့ သိမ်းမည့် Function
 async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
   console.log(`Checking holiday/weekend status for live fetch task (${sectionName})...`);
   if (await isHolidayOrWeekend()) {
@@ -197,7 +194,6 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
   const resData = response.data;
   let finalData = null;
   
-  // Section အလိုက် ရှာရမည့် တိကျသော အချိန် string (createdAt ကို လုံးဝ မကြည့်ပါ)
   let targetTimeString = "12:01:00";
   if (sectionName.toLowerCase().includes("12:01") || sectionName.toLowerCase().includes("noon")) {
     targetTimeString = "12:01:00";
@@ -206,11 +202,10 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
   }
 
   if (Array.isArray(resData) && resData.length > 0) {
-    // API data ထဲက object တစ်ခုချင်းစီကို JSON string ပြောင်းပြီး targetTimeString ပါဝင်မှုကို တိုက်ရိုက် ရှာမည်
     finalData = resData.find(item => {
       const itemStr = typeof item === 'string' ? item : JSON.stringify(item);
       return itemStr.includes(targetTimeString);
-    }) || resData[0]; // အကယ်၍ အတိအကျ တိုက်ဆိုင်တာ မရှိပါက ပထမဆုံး data ကို ယူမည်
+    }) || resData[0];
   } else {
     finalData = resData;
   }
@@ -239,7 +234,6 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
     }
   }
 
-  // 🚀 Cloudflare Worker ကို session နာမည်နှင့်တကွ ချက်ချင်း လှမ်းနိုးမည် (/trigger route သုံး၍)
   console.log(`[Triggering Worker] Waking up Cloudflare Worker for ${sectionName}...`);
   const cfWorkerUrl = process.env.CF_WORKER_URL;
   if (cfWorkerUrl) {
@@ -267,17 +261,14 @@ async function main() {
   const task = process.argv[2];
   console.log("Received task argument:", task);
 
-  if (task === "morning") {
-    console.log("Running Morning Archive Task (Firebase-based)...");
+  if (task === "morning" || task === "archive") {
     await morningArchiveTask();
   } else if (task === "noon") {
-    console.log("Running Noon Fetch Task (12:01 PM)...");
     await fetchAndSaveLive("https://signalr.crazybossy.com/api/info/Get2dlog_Bysection?section=12:01%20PM", "noon_data", "12:01 PM");
   } else if (task === "evening") {
-    console.log("Running Evening Fetch Task (4:30 PM)...");
     await fetchAndSaveLive("https://signalr.crazybossy.com/api/info/Get2dlog_Bysection?section=04:30%20PM", "evening_data", "4:30 PM");
   } else {
-    console.log("Please specify a valid task: morning, noon, or evening");
+    console.log("Please specify a valid task: archive, morning, noon, or evening");
   }
 
   console.log("Task execution finished.");
