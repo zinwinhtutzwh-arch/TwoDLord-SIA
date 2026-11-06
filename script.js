@@ -138,11 +138,10 @@ function getTargetDateTime(sectionName) {
   let targetHour = 12;
   let targetMinute = 1;
 
-  const lowerName = sectionName.toLowerCase();
-  if (lowerName.includes("9:30") || lowerName.includes("morning")) {
+  if (sectionName.toLowerCase().includes("9:30") || sectionName.toLowerCase().includes("morning")) {
     targetHour = 9;
     targetMinute = 30;
-  } else if (lowerName.includes("4:30") || lowerName.includes("evening") || lowerName.includes("04:30")) {
+  } else if (sectionName.toLowerCase().includes("4:30") || sectionName.toLowerCase().includes("evening")) {
     targetHour = 16;
     targetMinute = 30;
   }
@@ -197,30 +196,16 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
   const resData = response.data;
   let finalData = null;
   
-  let targetHour = 12;
-  let targetMinute = 1;
-  const lowerSecName = sectionName.toLowerCase();
-  if (lowerSecName.includes("9:30") || lowerSecName.includes("morning")) {
-    targetHour = 9;
-    targetMinute = 30;
-  } else if (lowerSecName.includes("4:30") || lowerSecName.includes("evening") || lowerSecName.includes("04:30")) {
-    targetHour = 16;
-    targetMinute = 30;
+  // 🎯 section အလိုက် ရှာမယ့် အချိန် string ကို တိကျစွာ သတ်မှတ်ခြင်း (createdAt ကို လုံးဝမကြည့်ဘဲ dateStr ကို endsWith ဖြင့် တိုက်စစ်မည်)
+  let targetTimeStr = "12:01:00"; // noon အတွက် ပုံသေ
+  if (sectionName.toLowerCase().includes("9:30") || sectionName.toLowerCase().includes("morning")) {
+    targetTimeStr = "09:30:00";
+  } else if (sectionName.toLowerCase().includes("4:30") || sectionName.toLowerCase().includes("evening")) {
+    targetTimeStr = "04:30:00";
   }
 
   if (Array.isArray(resData) && resData.length > 0) {
-    // 🎯 API ရလာတဲ့ data စာရင်းထဲမှ စက္ကန့် 00 အတိအကျရှိသော data ကို find ဖြင့် တိကျစွာ ရှာယူခြင်း
-    finalData = resData.find(current => {
-      const currentDateStr = current.createdAt || current.date || "";
-      if (!currentDateStr) return false;
-
-      const currDate = new Date(currentDateStr);
-      const currHour = currDate.getHours();
-      const currMinute = currDate.getMinutes();
-      const currSecond = currDate.getSeconds();
-
-      return currHour === targetHour && currMinute === targetMinute && currSecond === 0;
-    });
+    finalData = resData.find(item => item.dateStr && item.dateStr.endsWith(targetTimeStr));
   } else {
     finalData = resData;
   }
@@ -248,10 +233,10 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
       console.error("Error saving data to Firebase:", dbErr.message);
     }
   } else {
-    console.log(`[Warning] Exact match for ${sectionName} (at second 00) not found in API response.`);
+    console.warn(`[Warning] No matching data found with exact time string: ${targetTimeStr} for ${sectionName}`);
   }
 
-  // 🚀 Cloudflare Worker ကို session နာမည်နှင့်တကွ ချက်ချင်း လှမ်းနိုးမည် (/trigger route သုံး၍)
+  // 🚀 Cloudflare Worker ကို session နာမည်နှင့်တကွ ချက်ချင်း လှမ်းနိုးမည်
   console.log(`[Triggering Worker] Waking up Cloudflare Worker for ${sectionName}...`);
   const cfWorkerUrl = process.env.CF_WORKER_URL;
   if (cfWorkerUrl) {
@@ -286,13 +271,13 @@ async function main() {
     await morningArchiveTask();
   } else if (task === "morning") {
     console.log("Running Morning Fetch Task (9:30 AM)...");
-    await fetchAndSaveLive("https://signalr.crazybossy.com/api/info/Get2dlog_Bysection?section=09:30%20AM", "morning_data", "9:30 AM");
+    await fetchAndSaveLive("https://api.lucky2d.com/api/info/Get2dlog", "morning_data", "9:30 AM");
   } else if (task === "noon") {
     console.log("Running Noon Fetch Task (12:01 PM)...");
-    await fetchAndSaveLive("https://signalr.crazybossy.com/api/info/Get2dlog_Bysection?section=12:01%20PM", "noon_data", "12:01 PM");
+    await fetchAndSaveLive("https://api.lucky2d.com/api/info/Get2dlog", "noon_data", "12:01 PM");
   } else if (task === "evening") {
     console.log("Running Evening Fetch Task (4:30 PM)...");
-    await fetchAndSaveLive("https://signalr.crazybossy.com/api/info/Get2dlog_Bysection?section=04:30%20PM", "evening_data", "04:30 PM");
+    await fetchAndSaveLive("https://api.lucky2d.com/api/info/Get2dlog", "evening_data", "04:30 PM");
   } else {
     console.log("Please specify a valid task: archive, morning, noon, or evening");
   }
