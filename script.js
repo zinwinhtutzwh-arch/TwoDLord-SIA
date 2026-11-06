@@ -209,7 +209,7 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
   }
 
   if (Array.isArray(resData) && resData.length > 0) {
-    // 🎯 စက္ကန့် 00 အတိအကျ ဖြစ်သော data ကိုသာ find ဖြင့် ရှာယူခြင်း
+    // 🎯 API ရလာတဲ့ data စာရင်းထဲမှ စက္ကန့် 00 အတိအကျရှိသော data ကို find ဖြင့် တိကျစွာ ရှာယူခြင်း
     finalData = resData.find(current => {
       const currentDateStr = current.createdAt || current.date || "";
       if (!currentDateStr) return false;
@@ -248,7 +248,7 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
       console.error("Error saving data to Firebase:", dbErr.message);
     }
   } else {
-    console.log(`[Warning] Exact match for ${sectionName} (at second 00) not found in API response yet.`);
+    console.log(`[Warning] Exact match for ${sectionName} (at second 00) not found in API response.`);
   }
 
   // 🚀 Cloudflare Worker ကို session နာမည်နှင့်တကွ ချက်ချင်း လှမ်းနိုးမည် (/trigger route သုံး၍)
