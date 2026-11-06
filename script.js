@@ -138,10 +138,11 @@ function getTargetDateTime(sectionName) {
   let targetHour = 12;
   let targetMinute = 1;
 
-  if (sectionName.toLowerCase().includes("9:30") || sectionName.toLowerCase().includes("morning")) {
+  const lowerName = sectionName.toLowerCase();
+  if (lowerName.includes("9:30") || lowerName.includes("morning")) {
     targetHour = 9;
     targetMinute = 30;
-  } else if (sectionName.toLowerCase().includes("4:30") || sectionName.toLowerCase().includes("evening")) {
+  } else if (lowerName.includes("4:30") || lowerName.includes("evening") || lowerName.includes("04:30")) {
     targetHour = 16;
     targetMinute = 30;
   }
@@ -198,16 +199,17 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
   
   let targetHour = 12;
   let targetMinute = 1;
-  if (sectionName.toLowerCase().includes("9:30") || sectionName.toLowerCase().includes("morning")) {
+  const lowerSecName = sectionName.toLowerCase();
+  if (lowerSecName.includes("9:30") || lowerSecName.includes("morning")) {
     targetHour = 9;
     targetMinute = 30;
-  } else if (sectionName.toLowerCase().includes("4:30") || sectionName.toLowerCase().includes("evening")) {
+  } else if (lowerSecName.includes("4:30") || lowerSecName.includes("evening") || lowerSecName.includes("04:30")) {
     targetHour = 16;
     targetMinute = 30;
   }
 
   if (Array.isArray(resData) && resData.length > 0) {
-    // 🎯 အနီးစပ်ဆုံး ယူခြင်း (closest match) အစား စက္ကန့် 00 အတိအကျကိုသာ find ဖြင့် ရှာယူခြင်း
+    // 🎯 စက္ကန့် 00 အတိအကျ ဖြစ်သော data ကိုသာ find ဖြင့် ရှာယူခြင်း
     finalData = resData.find(current => {
       const currentDateStr = current.createdAt || current.date || "";
       if (!currentDateStr) return false;
@@ -217,7 +219,6 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
       const currMinute = currDate.getMinutes();
       const currSecond = currDate.getSeconds();
 
-      // နာရီ၊ မိနစ် တိုက်ဆိုင်ပြီး စက္ကန့် 00 အတိအကျ ဖြစ်ရမည်
       return currHour === targetHour && currMinute === targetMinute && currSecond === 0;
     });
   } else {
