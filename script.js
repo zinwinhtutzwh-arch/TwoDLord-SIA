@@ -151,7 +151,7 @@ function getTargetDateTime(sectionName) {
   return new Date(targetString).getTime();
 }
 
-// 🚀 Noon နှင့် Evening Data များကို API မှ ယူ၍ Firebase သို့ သိမ်းမည့် Function (createdAt ကို မကြည့်ဘဲ အချိန် string ဖြင့် တိုက်စစ်သည်)
+// 🚀 Noon နှင့် Evening Data များကို API မှ ယူ၍ Firebase သို့ သိမ်းမည့် Function (createdAt ကို လုံးဝ မကြည့်ဘဲ အချိန် string ဖြင့် တိုက်စစ်သည်)
 async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
   console.log(`Checking holiday/weekend status for live fetch task (${sectionName})...`);
   if (await isHolidayOrWeekend()) {
@@ -197,7 +197,7 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
   const resData = response.data;
   let finalData = null;
   
-  // Section အလိုက် ရှာရမည့် တိကျသော အချိန် string (createdAt ကို မကြည့်ဘဲ ဤ string ကိုသာ တိုက်စစ်မည်)
+  // Section အလိုက် ရှာရမည့် တိကျသော အချိန် string (createdAt ကို လုံးဝ မကြည့်ပါ)
   let targetTimeString = "12:01:00";
   if (sectionName.toLowerCase().includes("12:01") || sectionName.toLowerCase().includes("noon")) {
     targetTimeString = "12:01:00";
@@ -206,11 +206,11 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
   }
 
   if (Array.isArray(resData) && resData.length > 0) {
-    // createdAt ကို လုံးဝ မကြည့်ဘဲ၊ data ထဲက အချိန် string (ဥပမာ - "04:30:00") ပါဝင်မှုကို တိုက်ရိုက် စစ်ဆေးမည်
+    // API data ထဲက object တစ်ခုချင်းစီကို JSON string ပြောင်းပြီး targetTimeString ပါဝင်မှုကို တိုက်ရိုက် ရှာမည်
     finalData = resData.find(item => {
-      const timeVal = item.time || item.date || "";
-      return String(timeVal).includes(targetTimeString);
-    }) || resData[0]; // အကယ်၍ အတိအကျ တိုက်ဆိုင်တာ မရှိပါက ပထမဆုံး data ကို fallback အနေဖြင့် ယူမည်
+      const itemStr = typeof item === 'string' ? item : JSON.stringify(item);
+      return itemStr.includes(targetTimeString);
+    }) || resData[0]; // အကယ်၍ အတိအကျ တိုက်ဆိုင်တာ မရှိပါက ပထမဆုံး data ကို ယူမည်
   } else {
     finalData = resData;
   }
