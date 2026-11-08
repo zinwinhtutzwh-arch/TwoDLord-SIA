@@ -27,7 +27,18 @@ async function isHolidayOrWeekend() {
     const response = await axios.get("https://api.lucky2d.com/api/holiday/GetHolidayList", { timeout: 5000 });
     const holidays = response.data;
     const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Yangon' });
-    if (Array.isArray(holidays) && holidays.includes(todayStr)) {
+
+    let holidayDates = [];
+    if (Array.isArray(holidays)) {
+      holidayDates = holidays
+        .filter(h => h.status === "ACTIVE")
+        .map(h => h.date ? String(h.date).substring(0, 10).trim() : "");
+    }
+
+    console.log(`Today: ${todayStr}`);
+    console.log(`Holiday Dates List:`, holidayDates);
+
+    if (holidayDates.includes(todayStr)) {
       console.log("Today is a public holiday.");
       return true;
     }
@@ -47,7 +58,9 @@ async function getLastBusinessDay() {
   try {
     const response = await axios.get("https://api.lucky2d.com/api/holiday/GetHolidayList", { timeout: 5000 });
     if (Array.isArray(response.data)) {
-      holidays = response.data;
+      holidays = response.data
+        .filter(h => h.status === "ACTIVE")
+        .map(h => h.date ? String(h.date).substring(0, 10).trim() : "");
     }
   } catch (error) {
     console.error("Error fetching holiday list for last business day:", error.message);
