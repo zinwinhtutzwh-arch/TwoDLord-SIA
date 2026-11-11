@@ -161,7 +161,7 @@ function getTargetDateTime(sectionName) {
   return new Date(targetString).getTime();
 }
 
-// 🚀 Noon နှင့် Evening Data များကို API မှ ယူ၍ Firebase သို့ သိမ်းမည့် Function
+// 🚀 Noon နှင့် Evening Data များကို API မှ ယူ၍ Firebase သို့ သိမ်းမည့် Function (Exact dateStr Polling)
 async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
   console.log(`Checking holiday/weekend status for live fetch task (${sectionName})...`);
   if (await isHolidayOrWeekend()) {
@@ -175,6 +175,7 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
 
   console.log(`Target Time for ${sectionName} is set to timestamp: ${targetTimeMs}`);
 
+  // 🕒 12:01 မထိုးခင် အထိ API လုံးဝမခေါ်ဘဲ ငြိမ်စောင့်မည်
   if (delayMs > 0) {
     console.log(`[Silent Wait] Script started early. Waiting for ${(delayMs / 1000).toFixed(1)} seconds until exact target time...`);
     await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -182,45 +183,47 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
     console.log(`[Warning] Target time already passed or reached by ${(Math.abs(delayMs) / 1000).toFixed(1)}s. Executing immediately.`);
   }
 
-  console.log(`[Executing] Fetching exact live data for ${sectionName} from API: ${apiUrl}`);
+  // 📅 ဒီနေ့ရက်စွဲကို Asia/Yangon အချိန်ဇုန်အရ ယူခြင်း (ဥပမာ - "2026-11-11")
+  const now = new Date();
+  const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Yangon' });
 
-  let response = null;
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      response = await axios.get(apiUrl, { timeout: 5000 });
-      if (response && response.data) {
-        break;
-      }
-    } catch (err) {
-      console.error(`[Attempt ${attempt}/3] Error fetching section API:`, err.message);
-      if (attempt < 3) {
-        await new Promise((r) => setTimeout(r, 1000));
-      }
-    }
-  }
-
-  if (!response || !response.data) {
-    console.error(`[Failed] Could not fetch data for ${sectionName} after multiple attempts.`);
-    return;
-  }
-
-  const resData = response.data;
-  let finalData = null;
-  
+  // 🎯 လိုချင်တဲ့ dateStr အတိအကျ ပုံစံကို တည်ဆောက်ခြင်း
   let targetTimeString = "12:01:00";
   if (sectionName.toLowerCase().includes("12:01") || sectionName.toLowerCase().includes("noon")) {
     targetTimeString = "12:01:00";
   } else if (sectionName.toLowerCase().includes("4:30") || sectionName.toLowerCase().includes("evening")) {
     targetTimeString = "04:30:00";
   }
+  const exactTargetDateStr = `${todayStr} ${targetTimeString}`;
+  console.log(`[Polling Started] Waiting for exact dateStr: "${exactTargetDateStr}"...`);
 
-  if (Array.isArray(resData) && resData.length > 0) {
-    finalData = resData.find(item => {
-      const itemStr = typeof item === 'string' ? item : JSON.stringify(item);
-      return itemStr.includes(targetTimeString);
-    }) || resData[0];
-  } else {
-    finalData = resData;
+  let finalData = null;
+
+  // 🔄 dateStr ကွက်တိ ("YYYY-MM-DD 12:01:00") မရမချင်း ၁ စက္ကန့်တစ်ကြိမ် ဆက်တိုက် Polling လုပ်မည်
+  while (true) {
+    try {
+      const response = await axios.get(apiUrl, { timeout: 5000 });
+      if (response && response.data) {
+        const resData = response.data;
+        const dataArray = Array.isArray(resData) ? resData : [resData];
+
+        // dateStr ကွက်တိ တူညီသည့် item ကို ရှာဖွေခြင်း
+        const exactMatch = dataArray.find(item => {
+          return item && item.dateStr && item.dateStr.trim() === exactTargetDateStr;
+        });
+
+        if (exactMatch) {
+          finalData = exactMatch;
+          console.log(`[Found] Successfully got exact match for ${exactTargetDateStr}:`, finalData);
+          break; // တွေ့ပြီဆိုပါက loop မှ ချက်ချင်း ထွက်မည်
+        }
+      }
+    } catch (err) {
+      console.error(`[Polling Error] Error fetching API, retrying in 1s:`, err.message);
+    }
+
+    // မတွေ့သေးပါက ၁ စက္ကန့် စောင့်ပြီးမှ API ကို ထပ်ခေါ်မည်
+    await new Promise((resolve) => setTimeout(resolve, 1000));
   }
 
   if (finalData) {
