@@ -161,7 +161,7 @@ function getTargetDateTime(sectionName) {
   return new Date(targetString).getTime();
 }
 
-// 🚀 Noon နှင့် Evening Data များကို API မှ ယူ၍ Firebase သို့ သိမ်းမည့် Function (Exact dateStr Polling)
+// 🚀 Noon နှင့် Evening Data များကို API မှ ယူ၍ Firebase သို့ သိမ်းမည့် Function (Exact dateStr & isReference Polling)
 async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
   console.log(`Checking holiday/weekend status for live fetch task (${sectionName})...`);
   if (await isHolidayOrWeekend()) {
@@ -175,7 +175,7 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
 
   console.log(`Target Time for ${sectionName} is set to timestamp: ${targetTimeMs}`);
 
-  // 🕒 12:01 မထိုးခင် အထိ API လုံးဝမခေါ်ဘဲ ငြိမ်စောင့်မည်
+  // 🕒 သတ်မှတ်ချိန် မရောက်သေးရင် API လုံးဝမခေါ်ဘဲ ငြိမ်စောင့်မည်
   if (delayMs > 0) {
     console.log(`[Silent Wait] Script started early. Waiting for ${(delayMs / 1000).toFixed(1)} seconds until exact target time...`);
     await new Promise((resolve) => setTimeout(resolve, delayMs));
@@ -183,7 +183,7 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
     console.log(`[Warning] Target time already passed or reached by ${(Math.abs(delayMs) / 1000).toFixed(1)}s. Executing immediately.`);
   }
 
-  // 📅 ဒီနေ့ရက်စွဲကို Asia/Yangon အချိန်ဇုန်အရ ယူခြင်း (ဥပမာ - "2026-11-11")
+  // 📅 ဒီနေ့ရက်စွဲကို Asia/Yangon အချိန်ဇုန်အရ ယူခြင်း (ဥပမာ - "2026-11-13")
   const now = new Date();
   const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Yangon' });
 
@@ -195,11 +195,11 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
     targetTimeString = "04:30:00";
   }
   const exactTargetDateStr = `${todayStr} ${targetTimeString}`;
-  console.log(`[Polling Started] Waiting for exact dateStr: "${exactTargetDateStr}"...`);
+  console.log(`[Polling Started] Waiting for exact dateStr: "${exactTargetDateStr}" with isReference: true...`);
 
   let finalData = null;
 
-  // 🔄 dateStr ကွက်တိ ("YYYY-MM-DD 12:01:00") မရမချင်း ၁ စက္ကန့်တစ်ကြိမ် ဆက်တိုက် Polling လုပ်မည်
+  // 🔄 dateStr ကွက်တိ တူညီပြီး isReference: true ဖြစ်တဲ့ item ကို ရတဲ့အထိ ၁ စက္ကန့်တစ်ကြိမ် Polling လုပ်မည်
   while (true) {
     try {
       const response = await axios.get(apiUrl, { timeout: 5000 });
@@ -207,14 +207,17 @@ async function fetchAndSaveLive(apiUrl, sectionKey, sectionName) {
         const resData = response.data;
         const dataArray = Array.isArray(resData) ? resData : [resData];
 
-        // dateStr ကွက်တိ တူညီသည့် item ကို ရှာဖွေခြင်း
+        // dateStr တူပြီး isReference: true ဖြစ်သော item ကို ရှာဖွေခြင်း
         const exactMatch = dataArray.find(item => {
-          return item && item.dateStr && item.dateStr.trim() === exactTargetDateStr;
+          return item && 
+                 item.dateStr && 
+                 item.dateStr.trim() === exactTargetDateStr && 
+                 item.isReference === true;
         });
 
         if (exactMatch) {
           finalData = exactMatch;
-          console.log(`[Found] Successfully got exact match for ${exactTargetDateStr}:`, finalData);
+          console.log(`[Found] Successfully got exact match with isReference: true for ${exactTargetDateStr}:`, finalData);
           break; // တွေ့ပြီဆိုပါက loop မှ ချက်ချင်း ထွက်မည်
         }
       }
