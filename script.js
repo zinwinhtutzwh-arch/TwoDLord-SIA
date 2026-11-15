@@ -81,9 +81,15 @@ async function getLastBusinessDay() {
   }
 }
 
-// 📌 Morning Archive Task - Firebase ထဲတွင် data ရှိပါက ပိတ်ရက်မစစ်ဘဲ တိုက်ရိုက် Archive လုပ်မည်
+// 📌 Morning Archive Task - ပိတ်ရက်စစ်ဆေးခြင်း (Holiday/Weekend check) ထည့်သွင်းထားသည်
 async function morningArchiveTask() {
   console.log("Running Morning Archive Task (Direct Firebase Archive)...");
+
+  // 🛑 ဒီနေ့ဟာ ပိတ်ရက် သို့မဟုတ် စနေ၊တနင်္ဂနွေ ဖြစ်နေရင် Archive task ကို ကျော်သွားမည်
+  if (await isHolidayOrWeekend()) {
+    console.log("Today is a weekend or holiday. Skipping morning archive task.");
+    return;
+  }
 
   try {
     const latestRef = db.collection("latest").doc("current");
