@@ -1,0 +1,32 @@
+name: Update Market Data
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Execution mode (update or reset)"
+        required: false
+        default: "update"
+
+jobs:
+  scrape-and-save:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install cheerio
+        run: npm install --no-save cheerio
+
+      - name: Run Market Scraper
+        env:
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_NAMESPACE_ID: ${{ secrets.CF_NAMESPACE_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          MODE: ${{ github.event.inputs.mode || 'update' }}
+        run: node market-scraper.mjs
