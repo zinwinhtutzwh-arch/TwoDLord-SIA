@@ -35,10 +35,10 @@ function getMyanmarDate() {
   return mmTime.toISOString().split("T")[0];
 }
 
-function getMyanmarHour() {
+function getMyanmarTotalMinutes() {
   const now = new Date();
   const mmTime = new Date(now.getTime() + 6.5 * 60 * 60 * 1000);
-  return mmTime.getUTCHours();
+  return mmTime.getUTCHours() * 60 + mmTime.getUTCMinutes();
 }
 
 function parseDrawDateToISO(text) {
@@ -51,7 +51,7 @@ function parseDrawDateToISO(text) {
 async function isHolidayOrWeekend() {
   const now = new Date();
   const mmTime = new Date(now.getTime() + 6.5 * 60 * 60 * 1000);
-  const dayOfWeek = mmTime.getDay();
+  const dayOfWeek = mmTime.getUTCDay();
   if (dayOfWeek === 0 || dayOfWeek === 6) return true;
 
   try {
@@ -83,14 +83,15 @@ async function reset2DData() {
   console.log("2D Data Reset Complete.");
 }
 
-// --- 2. Fetch 2D Data with Retry (၁၅ စက္ကန့်ခြား အကြိမ် ၄၀ = ၁၀ မိနစ်တိုင်အောင် Data ရတဲ့အထိ စောင့်မည်) ---
+// --- 2. Fetch 2D Data with Retry ---
 async function fetch2DData() {
   if (await isHolidayOrWeekend()) {
     console.log("Skipping 2D: Weekend or Public Holiday.");
     return null;
   }
 
-  const isAfternoon = getMyanmarHour() >= 12;
+  // မွန်းလွဲ 1:55 PM (13:55) နောက်ပိုင်းမှသာ 2:00 PM ဂဏန်း ၂ လုံးကို စောင့်ယူမည်
+  const isAfternoon = getMyanmarTotalMinutes() >= 13 * 60 + 55;
   const maxAttempts = 40;
   let modernInternetRaw = [];
 
